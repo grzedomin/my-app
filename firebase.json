@@ -1,0 +1,42 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "hosting": {
+    "public": "public",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ]
+  },
+  "storage": {
+    "rules": "storage.rules",
+    "cors": [
+      {
+        "origin": [
+          "http://localhost:3000",
+          "https://*.web.app",
+          "https://*.firebaseapp.com"
+        ],
+        "method": [
+          "GET",
+          "HEAD",
+          "POST",
+          "PUT",
+          "DELETE",
+          "OPTIONS"
+        ],
+        "maxAgeSeconds": 3600,
+        "responseHeader": [
+          "Content-Type",
+          "Authorization",
+          "Content-Length",
+          "User-Agent",
+          "X-Requested-With"
+        ]
+      }
+    ]
+  }
+}

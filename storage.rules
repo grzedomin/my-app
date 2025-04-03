@@ -1,0 +1,18 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Default rule - deny access
+    match /{allPaths=**} {
+      // Allow read access with proper authentication
+      allow read: if request.auth != null || resource.metadata.accessLevel == "public";
+      allow option: if true;  // Always allow preflight OPTIONS requests
+    }
+    
+    // Allow authenticated users to access their own files
+    match /betting-files/{userId}/{fileName} {
+      allow read: if request.auth != null && (request.auth.uid == userId || resource.metadata.accessLevel == "public");
+      allow write: if request.auth != null && request.auth.uid == userId;
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+} 

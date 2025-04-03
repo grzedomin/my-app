@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "files",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "uploadDate", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+} 
