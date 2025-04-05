@@ -2,7 +2,7 @@
   "compilerOptions": {
     "module": "NodeNext",
     "esModuleInterop": true,
-    "moduleResolution": "nodenext",
+    "moduleResolution": "NodeNext",
     "noImplicitReturns": true,
     "noUnusedLocals": true,
     "outDir": "lib",

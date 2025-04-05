@@ -12,6 +12,7 @@ export interface FileData {
     uploadDate: number;
     userId: string;
     size: number;
+    isPublic?: boolean;
 }
 
 // Firebase functions API URL
@@ -112,7 +113,8 @@ export const uploadFile = async (
             contentType: file.type,
             uploadDate: Date.now(),
             userId,
-            size: file.size
+            size: file.size,
+            isPublic: true // Mark all files as public by default
         };
 
         // Save to Firestore
@@ -150,6 +152,34 @@ export const getUserFiles = async (userId: string): Promise<FileData[]> => {
         return files;
     } catch (error) {
         console.error("Error getting user files:", error);
+        return [];
+    }
+};
+
+/**
+ * Get all available files from the database
+ * This allows all users to see all uploaded files
+ */
+export const getAllFiles = async (): Promise<FileData[]> => {
+    try {
+        console.log("Getting all available files");
+        const q = query(
+            collection(db, "files"),
+            orderBy("uploadDate", "desc")
+        );
+
+        const querySnapshot = await getDocs(q);
+        const files: FileData[] = [];
+
+        querySnapshot.forEach((doc) => {
+            const fileData = doc.data() as FileData;
+            console.log("File data retrieved:", fileData.fileName, fileData.downloadUrl);
+            files.push(fileData);
+        });
+
+        return files;
+    } catch (error) {
+        console.error("Error getting all files:", error);
         return [];
     }
 };

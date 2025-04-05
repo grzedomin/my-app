@@ -3,7 +3,7 @@ import { PieChart } from "react-minimal-pie-chart";
 import * as XLSX from "xlsx";
 import { useAuth } from "@/context/AuthContext";
 import { useNotification } from "@/context/NotificationContext";
-import { uploadFile, getUserFiles, FileData, cleanupOrphanedFiles, fetchExcelFile } from "@/lib/storage";
+import { uploadFile, getAllFiles, FileData, cleanupOrphanedFiles, fetchExcelFile } from "@/lib/storage";
 import { FirebaseError } from "firebase/app";
 
 interface BettingPrediction {
@@ -49,23 +49,21 @@ const BettingPredictionsTable: React.FC = () => {
 
     // Fetch saved files when component mounts
     useEffect(() => {
-        if (user) {
-            fetchSavedFiles();
-        }
-    }, [user]);
+        fetchSavedFiles();
+    }, []);
 
     // Function to fetch saved files from database
     const fetchSavedFiles = async () => {
-        if (!user) return;
-
         try {
             setIsLoadingFiles(true);
 
-            // First, clean up any orphaned file records
-            await cleanupOrphanedFiles(user.uid);
+            // If user is logged in, clean up their orphaned file records
+            if (user) {
+                await cleanupOrphanedFiles(user.uid);
+            }
 
-            // Then get the updated list of files
-            const files = await getUserFiles(user.uid);
+            // Get all files regardless of the user
+            const files = await getAllFiles();
 
             // Automatically load the most recent file (if any exist)
             if (files.length > 0) {
@@ -409,7 +407,8 @@ const BettingPredictionsTable: React.FC = () => {
                             ) : (
                                 <>
                                     <svg className="w-4 h-4 mr-2" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 101.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                                        <path fillRule="evenodd" d="M5.5 13a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.977A4.5 4.5 0 1113.5 13H11V9.413l1.293 1.293a1 1 0 001.414-1.414l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13H5.5z" clipRule="evenodd" />
+                                        <path d="M9 13h2v5a1 1 0 11-2 0v-5z" />
                                     </svg>
                                     Upload Excel File
                                 </>
@@ -420,7 +419,7 @@ const BettingPredictionsTable: React.FC = () => {
                     <button
                         onClick={() => fetchSavedFiles()}
                         className={`px-4 py-2 rounded-md font-medium flex items-center ${isLoadingFiles ? "bg-blue-300" : "bg-blue-600 hover:bg-blue-700"} text-white`}
-                        disabled={isLoadingFiles || !user}
+                        disabled={isLoadingFiles}
                     >
                         {isLoadingFiles ? (
                             <>
@@ -440,30 +439,43 @@ const BettingPredictionsTable: React.FC = () => {
                         )}
                     </button>
 
-                    <button
-                        onClick={async () => {
-                            if (!user) return;
-                            try {
-                                setIsLoadingFiles(true);
-                                showNotification("Cleaning up orphaned files...", "info");
-                                await cleanupOrphanedFiles(user.uid);
-                                await fetchSavedFiles();
-                                showNotification("Cleanup completed successfully", "success");
-                            } catch (error) {
-                                console.error("Error during cleanup:", error);
-                                showNotification("Error during cleanup", "error");
-                            } finally {
-                                setIsLoadingFiles(false);
-                            }
-                        }}
-                        className="ml-2 px-4 py-2 rounded-md font-medium flex items-center bg-amber-600 hover:bg-amber-700 text-white"
-                        disabled={isLoadingFiles || !user}
-                    >
-                        <svg className="w-4 h-4 mr-2" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                        </svg>
-                        Clean Up
-                    </button>
+                    {user && (
+                        <button
+                            onClick={async () => {
+                                if (!user) return;
+                                try {
+                                    setIsLoadingFiles(true);
+                                    showNotification("Cleaning up orphaned files...", "info");
+                                    await cleanupOrphanedFiles(user.uid);
+                                    await fetchSavedFiles();
+                                    showNotification("Cleanup completed successfully", "success");
+                                } catch (error) {
+                                    console.error("Error during cleanup:", error);
+                                    showNotification("Error during cleanup", "error");
+                                } finally {
+                                    setIsLoadingFiles(false);
+                                }
+                            }}
+                            className="ml-2 px-4 py-2 rounded-md font-medium flex items-center bg-amber-600 hover:bg-amber-700 text-white"
+                            disabled={isLoadingFiles}
+                        >
+                            <svg className="w-4 h-4 mr-2" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                            </svg>
+                            Clean Up
+                        </button>
+                    )}
+
+                    {!user && (
+                        <p className="text-red-600 text-sm mt-1">
+                            You must be logged in to upload files
+                        </p>
+                    )}
+                    {user && (
+                        <p className="text-gray-600 text-sm mt-1">
+                            Files you upload will be visible to all users
+                        </p>
+                    )}
 
                 </div>
             </div>
