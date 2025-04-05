@@ -9,7 +9,7 @@ import Link from "next/link";
 import AdminOnly from "@/components/AdminOnly";
 
 export default function Dashboard() {
-    const { user, userRole, logout } = useAuth();
+    const { user, logout } = useAuth();
     const router = useRouter();
     const { showNotification } = useNotification();
     const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -60,9 +60,6 @@ export default function Dashboard() {
                         <div className="flex items-center">
                             <div className="mr-4 flex flex-col items-end">
                                 <span>{user.email}</span>
-                                <span className="text-xs text-gray-500">
-                                    Role: <span className={userRole === "admin" ? "text-indigo-600 font-semibold" : ""}>{userRole}</span>
-                                </span>
                             </div>
                             <button
                                 onClick={handleLogout}

@@ -115,6 +115,33 @@ export default function AdminDashboard() {
                                 </div>
                             </div>
                         </div>
+
+                        {/* Betting Predictions Management Card */}
+                        <div className="bg-white overflow-hidden shadow rounded-lg">
+                            <div className="px-4 py-5 sm:p-6">
+                                <div className="flex items-center">
+                                    <div className="flex-shrink-0 bg-blue-500 rounded-md p-3">
+                                        <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h10a2 2 0 012 2v10a2 2 0 01-2 2z" />
+                                        </svg>
+                                    </div>
+                                    <div className="ml-5 w-0 flex-1">
+                                        <dt className="text-lg font-medium text-gray-900">Betting Predictions</dt>
+                                        <dd className="mt-2 text-sm text-gray-500">
+                                            Manage betting prediction files and data
+                                        </dd>
+                                    </div>
+                                </div>
+                                <div className="mt-5">
+                                    <Link
+                                        href="/admin/predictions"
+                                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                    >
+                                        Manage Predictions
+                                    </Link>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div className="mt-8 bg-yellow-50 border-l-4 border-yellow-400 p-4">
