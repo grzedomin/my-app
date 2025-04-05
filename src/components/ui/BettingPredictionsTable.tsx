@@ -22,15 +22,15 @@ interface BettingPrediction {
 // Define a type for the Excel row data
 interface ExcelRowData {
     Date?: string;
-    "Team 1"?: string;
+    Team_1?: string;
     Odd?: string | number;
-    "Team 2"?: string;
+    Team_2?: string;
     Odd2?: string | number;
-    "Score Prediction"?: string;
+    Score_prediction?: string;
     Confidence?: string | number;
-    "Betting predictions Team 1 Win"?: string | number;
-    "Betting predictions Team 2 Win"?: string | number;
-    "Final Score"?: string;
+    Betting_predictions_team_1_Win?: string | number;
+    Betting_predictions_team_2_Win?: string | number;
+    Final_Score?: string;
     [key: string]: string | number | undefined;
 }
 
@@ -186,17 +186,18 @@ const BettingPredictionsTable: React.FC = () => {
                     console.log("Excel data:", jsonData);
                     // Map the Excel data to our BettingPrediction interface
                     const mappedData = jsonData.map((row: ExcelRowData) => {
+                        console.log("Row:", row);
                         return {
-                            date: row.Date || "",
-                            team1: row["Team 1"] || "",
-                            oddTeam1: parseFloat(row.Odd?.toString() || "0"),
-                            team2: row["Team 2"] || "",
-                            oddTeam2: parseFloat(row.Odd2?.toString() || "0"),
-                            scorePrediction: row["Score Prediction"] || "",
-                            confidence: parseFloat(row.Confidence?.toString() || "0"),
-                            bettingPredictionTeam1Win: parseFloat(row["Betting predictions Team 1 Win"]?.toString() || "0"),
-                            bettingPredictionTeam2Win: parseFloat(row["Betting predictions Team 2 Win"]?.toString() || "0"),
-                            finalScore: row["Final Score"] || ""
+                            date: row.Date ?? "",
+                            team1: row.Team_1 ?? "",
+                            oddTeam1: parseFloat(row.Odd?.toString() ?? "0"),
+                            team2: row.Team_2 ?? "",
+                            oddTeam2: parseFloat(row.Odd2?.toString() ?? "0"),
+                            scorePrediction: row.Score_prediction ?? "",
+                            confidence: parseFloat(row.Confidence?.toString() ?? "0"),
+                            bettingPredictionTeam1Win: parseFloat(row.Betting_predictions_team_1_win?.toString() ?? "0"),
+                            bettingPredictionTeam2Win: parseFloat(row.Betting_predictions_team_2_win?.toString() ?? "0"),
+                            finalScore: row.Final_Score ?? ""
                         } as BettingPrediction;
                     });
 
@@ -253,17 +254,19 @@ const BettingPredictionsTable: React.FC = () => {
                 console.log("Excel data:", jsonData);
                 // Map the Excel data to our BettingPrediction interface
                 const mappedData = jsonData.map((row: ExcelRowData) => {
+                    console.log("Row:", row);
+
                     return {
-                        date: row.Date || "",
-                        team1: row["Team 1"] || "",
-                        oddTeam1: parseFloat(row.Odd?.toString() || "0"),
-                        team2: row["Team 2"] || "",
-                        oddTeam2: parseFloat(row.Odd2?.toString() || "0"),
-                        scorePrediction: row["Score Prediction"] || "",
-                        confidence: parseFloat(row.Confidence?.toString() || "0"),
-                        bettingPredictionTeam1Win: parseFloat(row["Betting predictions Team 1 Win"]?.toString() || "0"),
-                        bettingPredictionTeam2Win: parseFloat(row["Betting predictions Team 2 Win"]?.toString() || "0"),
-                        finalScore: row["Final Score"] || ""
+                        date: row.Date ?? "",
+                        team1: row.Team_1 ?? "",
+                        oddTeam1: parseFloat(row.Odd?.toString() ?? "0"),
+                        team2: row.Team_2 ?? "",
+                        oddTeam2: parseFloat(row.Odd2?.toString() ?? "0"),
+                        scorePrediction: row.Score_prediction ?? "",
+                        confidence: parseFloat(row.Confidence?.toString() ?? "0"),
+                        bettingPredictionTeam1Win: parseFloat(row.Betting_predictions_team_1_win?.toString() ?? "0"),
+                        bettingPredictionTeam2Win: parseFloat(row.Betting_predictions_team_2_win?.toString() ?? "0"),
+                        finalScore: row.Final_Score ?? ""
                     } as BettingPrediction;
                 });
 
