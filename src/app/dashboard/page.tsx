@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useNotification } from "@/context/NotificationContext";
 import BettingPredictionsTable from "@/components/ui/BettingPredictionsTable";
+import Link from "next/link";
+import AdminOnly from "@/components/AdminOnly";
 
 export default function Dashboard() {
-    const { user, logout } = useAuth();
+    const { user, userRole, logout } = useAuth();
     const router = useRouter();
     const { showNotification } = useNotification();
     const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -44,11 +46,24 @@ export default function Dashboard() {
             <nav className="bg-white shadow">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex justify-between h-16">
-                        <div className="flex items-center">
+                        <div className="flex items-center space-x-4">
                             <h1 className="text-xl font-bold">Dashboard</h1>
+                            <AdminOnly>
+                                <Link
+                                    href="/admin"
+                                    className="bg-indigo-600 px-4 py-2 text-white rounded-md hover:bg-indigo-700"
+                                >
+                                    Admin Panel
+                                </Link>
+                            </AdminOnly>
                         </div>
                         <div className="flex items-center">
-                            <span className="mr-4">{user.email}</span>
+                            <div className="mr-4 flex flex-col items-end">
+                                <span>{user.email}</span>
+                                <span className="text-xs text-gray-500">
+                                    Role: <span className={userRole === "admin" ? "text-indigo-600 font-semibold" : ""}>{userRole}</span>
+                                </span>
+                            </div>
                             <button
                                 onClick={handleLogout}
                                 disabled={isLoggingOut}
@@ -63,7 +78,14 @@ export default function Dashboard() {
 
             <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
                 <div className="px-4 py-6 sm:px-0">
-                    <h2 className="text-2xl font-bold mb-6">Welcome to your Dashboard</h2>
+                    <h2 className="text-2xl font-bold mb-6">
+                        Welcome to your Dashboard
+                        <AdminOnly>
+                            <span className="ml-2 text-sm bg-indigo-100 text-indigo-800 py-1 px-2 rounded-full">
+                                Admin Access
+                            </span>
+                        </AdminOnly>
+                    </h2>
 
                     {/* Betting Predictions Table */}
                     <div className="bg-white rounded-lg shadow-md p-6 mb-8">
