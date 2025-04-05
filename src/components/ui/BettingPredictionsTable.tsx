@@ -66,14 +66,12 @@ const BettingPredictionsTable: React.FC = () => {
 
             // Then get the updated list of files
             const files = await getUserFiles(user.uid);
-            console.log("Files fetched:", files);
 
             // Automatically load the most recent file (if any exist)
             if (files.length > 0) {
                 // Sort files by uploadDate (descending order - newest first)
                 const sortedFiles = [...files].sort((a, b) => b.uploadDate - a.uploadDate);
                 const mostRecentFile = sortedFiles[0];
-                console.log("Auto-loading most recent file:", mostRecentFile.fileName);
 
                 // Load the most recent file
                 await handleLoadFile(mostRecentFile);
@@ -183,10 +181,8 @@ const BettingPredictionsTable: React.FC = () => {
                         resolve(false);
                         return;
                     }
-                    console.log("Excel data:", jsonData);
                     // Map the Excel data to our BettingPrediction interface
                     const mappedData = jsonData.map((row: ExcelRowData) => {
-                        console.log("Row:", row);
                         return {
                             date: row.Date ?? "",
                             team1: row.Team_1 ?? "",
@@ -228,11 +224,9 @@ const BettingPredictionsTable: React.FC = () => {
         setUploadError("");
 
         try {
-            console.log("Loading file:", fileData.fileName, fileData.filePath);
 
             // Use the new fetchExcelFile function to avoid CORS issues
             const arrayBuffer = await fetchExcelFile(fileData.filePath);
-            console.log("File fetched successfully, array buffer size:", arrayBuffer.byteLength);
 
             try {
                 // Process the Excel file using the array buffer
@@ -251,10 +245,8 @@ const BettingPredictionsTable: React.FC = () => {
                 if (jsonData.length === 0) {
                     throw new Error("Excel file doesn't contain any data");
                 }
-                console.log("Excel data:", jsonData);
                 // Map the Excel data to our BettingPrediction interface
                 const mappedData = jsonData.map((row: ExcelRowData) => {
-                    console.log("Row:", row);
 
                     return {
                         date: row.Date ?? "",
@@ -270,7 +262,6 @@ const BettingPredictionsTable: React.FC = () => {
                     } as BettingPrediction;
                 });
 
-                console.log("Setting predictions in handleLoadFile:", mappedData);
                 setPredictions(mappedData);
                 setIsUploading(false);
             } catch (error) {
