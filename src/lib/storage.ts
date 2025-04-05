@@ -14,6 +14,53 @@ export interface FileData {
     size: number;
 }
 
+// Firebase functions API URL
+const FUNCTIONS_BASE_URL = process.env.NEXT_PUBLIC_FIREBASE_FUNCTIONS_URL || "https://us-central1-[YOUR-PROJECT-ID].cloudfunctions.net";
+
+/**
+ * Fetch an Excel file safely using the Cloud Function to avoid CORS issues
+ */
+export const fetchExcelFile = async (filePath: string): Promise<ArrayBuffer> => {
+    try {
+        // First check if we should use direct URL or function URL
+        let url;
+        const isLocalhost = typeof window !== "undefined" && window.location.hostname === "localhost";
+
+        if (isLocalhost) {
+            // In development, try to use direct storage URL
+            try {
+                const storageRef = ref(storage, filePath);
+                url = await getDownloadURL(storageRef);
+            } catch (error) {
+                console.warn("Failed to get direct download URL, falling back to function", error);
+                url = `${FUNCTIONS_BASE_URL}/getFile?path=${encodeURIComponent(filePath)}`;
+            }
+        } else {
+            // In production, always use the function URL to avoid CORS issues
+            url = `${FUNCTIONS_BASE_URL}/getFile?path=${encodeURIComponent(filePath)}`;
+        }
+
+        console.log("Fetching Excel file from:", url);
+
+        // Fetch the file as an array buffer
+        const response = await fetch(url, {
+            method: "GET",
+            headers: {
+                "Accept": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to fetch Excel file: ${response.status} ${response.statusText}`);
+        }
+
+        return await response.arrayBuffer();
+    } catch (error) {
+        console.error("Error fetching Excel file:", error);
+        throw error;
+    }
+};
+
 /**
  * Upload a file to Firebase Storage and save metadata to Firestore
  */

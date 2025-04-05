@@ -3,10 +3,8 @@ import { PieChart } from "react-minimal-pie-chart";
 import * as XLSX from "xlsx";
 import { useAuth } from "@/context/AuthContext";
 import { useNotification } from "@/context/NotificationContext";
-import { uploadFile, getUserFiles, FileData, deleteFile, cleanupOrphanedFiles } from "@/lib/storage";
+import { uploadFile, getUserFiles, FileData, cleanupOrphanedFiles, fetchExcelFile } from "@/lib/storage";
 import { FirebaseError } from "firebase/app";
-import { ref, getDownloadURL } from "firebase/storage";
-import { storage } from "../../lib/firebase";
 
 interface BettingPrediction {
     date: string;
@@ -227,117 +225,64 @@ const BettingPredictionsTable: React.FC = () => {
 
     // Function to load file data from storage
     const handleLoadFile = async (fileData: FileData) => {
+        if (isUploading) return;
+        setIsUploading(true);
+        setUploadError("");
+        setFileName(fileData.fileName);
+
         try {
-            setIsUploading(true);
-            setFileName(fileData.fileName);
+            console.log("Loading file:", fileData.fileName, fileData.filePath);
 
-            console.log("Attempting to load file:", fileData.fileName);
-            console.log("File path:", fileData.filePath);
+            // Use the new fetchExcelFile function to avoid CORS issues
+            const arrayBuffer = await fetchExcelFile(fileData.filePath);
+            console.log("File fetched successfully, array buffer size:", arrayBuffer.byteLength);
 
-            // Get a fresh download URL directly from Firebase Storage
-            const storageRef = ref(storage, fileData.filePath);
-            const freshDownloadUrl = await getDownloadURL(storageRef);
-            console.log("Fresh download URL:", freshDownloadUrl);
+            try {
+                // Process the Excel file using the array buffer
+                const workbook = XLSX.read(arrayBuffer, { type: "array" });
+                const sheetName = workbook.SheetNames[0];
 
-            // Get current user token for authorization
-            const idToken = user ? await user.getIdToken() : null;
-
-            // Fetch the file from the download URL
-            const response = await fetch(freshDownloadUrl, {
-                method: "GET",
-                headers: {
-                    "Accept": "*/*",
-                    ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {}),
-                },
-                mode: "cors",
-                cache: "no-cache",
-            });
-            console.log("Fetch response status:", response.status);
-
-            if (!response.ok) {
-                if (response.status === 404) {
-                    // File not found in storage - might have been deleted from storage but not from Firestore
-                    console.error("File not found in storage:", fileData.fileName);
-                    showNotification(`File "${fileData.fileName}" not found in storage. It may have been deleted.`, "error");
-
-                    // Remove file from Firestore to clean up
-                    try {
-                        await deleteFile(fileData.id);
-                        console.log("Removed missing file reference from Firestore:", fileData.id);
-
-                        // Refresh the file list and try to load a different file
-                        await fetchSavedFiles();
-                        return;
-                    } catch (deleteError) {
-                        console.error("Error removing missing file reference:", deleteError);
-                    }
+                if (!sheetName) {
+                    throw new Error("Excel file doesn't contain any sheets");
                 }
-                throw new Error(`Failed to fetch file: ${response.status} ${response.statusText}`);
-            }
 
-            const blob = await response.blob();
-            console.log("File blob size:", blob.size);
-            const file = new File([blob], fileData.fileName, { type: fileData.contentType });
+                const worksheet = workbook.Sheets[sheetName];
 
-            // Process the Excel file
-            const reader = new FileReader();
+                // Convert the Excel data to JSON
+                const jsonData = XLSX.utils.sheet_to_json<ExcelRowData>(worksheet);
 
-            reader.onload = (evt) => {
-                try {
-                    const binaryStr = evt.target?.result;
-                    const workbook = XLSX.read(binaryStr, { type: "binary" });
-                    const sheetName = workbook.SheetNames[0];
-
-                    if (!sheetName) {
-                        throw new Error("Excel file doesn't contain any sheets");
-                    }
-
-                    const worksheet = workbook.Sheets[sheetName];
-
-                    // Convert the Excel data to JSON
-                    const jsonData = XLSX.utils.sheet_to_json<ExcelRowData>(worksheet);
-
-                    if (jsonData.length === 0) {
-                        throw new Error("Excel file doesn't contain any data");
-                    }
-
-                    // Map the Excel data to our BettingPrediction interface
-                    const mappedData = jsonData.map((row: ExcelRowData) => {
-                        return {
-                            date: row.Date || "",
-                            team1: row["Team 1"] || "",
-                            oddTeam1: parseFloat(row.Odd?.toString() || "0"),
-                            team2: row["Team 2"] || "",
-                            oddTeam2: parseFloat(row.Odd2?.toString() || "0"),
-                            scorePrediction: row["Score Prediction"] || "",
-                            confidence: parseFloat(row.Confidence?.toString() || "0"),
-                            bettingPredictionTeam1Win: parseFloat(row["Betting predictions Team 1 Win"]?.toString() || "0"),
-                            bettingPredictionTeam2Win: parseFloat(row["Betting predictions Team 2 Win"]?.toString() || "0"),
-                            finalScore: row["Final Score"] || ""
-                        } as BettingPrediction;
-                    });
-
-                    console.log("Setting predictions in handleLoadFile:", mappedData);
-                    setPredictions(mappedData);
-                    setDataSource("excel");
-                    setIsUploading(false);
-                    showNotification(`File "${fileData.fileName}" loaded successfully`, "success");
-                } catch (error) {
-                    console.error("Error parsing Excel file:", error);
-                    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-                    setUploadError(`Failed to parse Excel file: ${errorMessage}`);
-                    showNotification("Failed to parse Excel file", "error");
-                    setIsUploading(false);
+                if (jsonData.length === 0) {
+                    throw new Error("Excel file doesn't contain any data");
                 }
-            };
 
-            reader.onerror = () => {
-                setUploadError("Error reading the file");
-                showNotification("Error reading the file", "error");
+                // Map the Excel data to our BettingPrediction interface
+                const mappedData = jsonData.map((row: ExcelRowData) => {
+                    return {
+                        date: row.Date || "",
+                        team1: row["Team 1"] || "",
+                        oddTeam1: parseFloat(row.Odd?.toString() || "0"),
+                        team2: row["Team 2"] || "",
+                        oddTeam2: parseFloat(row.Odd2?.toString() || "0"),
+                        scorePrediction: row["Score Prediction"] || "",
+                        confidence: parseFloat(row.Confidence?.toString() || "0"),
+                        bettingPredictionTeam1Win: parseFloat(row["Betting predictions Team 1 Win"]?.toString() || "0"),
+                        bettingPredictionTeam2Win: parseFloat(row["Betting predictions Team 2 Win"]?.toString() || "0"),
+                        finalScore: row["Final Score"] || ""
+                    } as BettingPrediction;
+                });
+
+                console.log("Setting predictions in handleLoadFile:", mappedData);
+                setPredictions(mappedData);
+                setDataSource("excel");
                 setIsUploading(false);
-            };
-
-            reader.readAsBinaryString(file);
+                showNotification(`File "${fileData.fileName}" loaded successfully`, "success");
+            } catch (error) {
+                console.error("Error parsing Excel file:", error);
+                const errorMessage = error instanceof Error ? error.message : "Unknown error";
+                setUploadError(`Failed to parse Excel file: ${errorMessage}`);
+                showNotification("Failed to parse Excel file", "error");
+                setIsUploading(false);
+            }
         } catch (error: unknown) {
             console.error("Error loading file:", error);
             const errorMessage = error instanceof Error ? error.message : "Unknown error";
@@ -497,8 +442,6 @@ const BettingPredictionsTable: React.FC = () => {
                     </div>
                 </div>
             )}
-
-
 
             <div className="overflow-x-auto">
                 {predictions && predictions.length > 0 ? (

@@ -18,7 +18,8 @@
         "origin": [
           "http://localhost:3000",
           "https://*.web.app",
-          "https://*.firebaseapp.com"
+          "https://*.firebaseapp.com",
+          "*"
         ],
         "method": [
           "GET",
@@ -34,7 +35,10 @@
           "Authorization",
           "Content-Length",
           "User-Agent",
-          "X-Requested-With"
+          "X-Requested-With",
+          "Accept",
+          "Origin",
+          "Access-Control-Allow-Origin"
         ]
       }
     ]
