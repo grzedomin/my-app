@@ -12,9 +12,21 @@ service firebase.storage {
     match /betting-files/{userId}/{fileName} {
       // Allow anyone to read files
       allow read: if true;
+      
       // Only file owners can write and delete
       allow write: if request.auth != null && request.auth.uid == userId;
       allow delete: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow metadata access
+      allow get, list: if true;
+    }
+    
+    // Function to validate file uploads
+    function isValidFile() {
+      // Check if the content type is for Excel files
+      return request.resource.contentType.matches('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') ||
+             request.resource.contentType.matches('application/vnd.ms-excel') ||
+             request.resource.contentType.matches('application/octet-stream');
     }
   }
 } 

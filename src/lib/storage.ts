@@ -2,6 +2,7 @@ import { ref, getDownloadURL, deleteObject, uploadBytesResumable } from "firebas
 import { storage, db } from "./firebase";
 import { doc, setDoc, collection, getDocs, query, orderBy, deleteDoc, getDoc, where } from "firebase/firestore";
 import { v4 as uuidv4 } from "uuid";
+import * as XLSX from "xlsx";
 
 export interface FileData {
     id: string;
@@ -13,7 +14,63 @@ export interface FileData {
     userId: string;
     size: number;
     isPublic?: boolean;
+    fileDate?: string; // Date extracted from Excel file content
 }
+
+// Extract date from Excel file
+export const extractDateFromExcel = async (file: File): Promise<string | null> => {
+    try {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+
+            reader.onload = (event) => {
+                try {
+                    const data = event.target?.result;
+                    const workbook = XLSX.read(data, { type: "binary" });
+                    const firstSheetName = workbook.SheetNames[0];
+
+                    if (!firstSheetName) {
+                        resolve(null);
+                        return;
+                    }
+
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const jsonData = XLSX.utils.sheet_to_json<{ Date?: string }>(worksheet);
+
+                    // Get date from the first row if available
+                    if (jsonData.length > 0 && jsonData[0].Date) {
+                        // Extract only the main date part (e.g., "8th Apr 2025") without time component
+                        const fullDate = jsonData[0].Date;
+                        // Match patterns like "3rd Apr 2025, 00:00 EDT" and extract "3rd Apr 2025"
+                        const dateMatch = fullDate.match(/(\d+[a-z]{2}\s+[A-Za-z]+\s+\d{4})/);
+
+                        if (dateMatch && dateMatch[1]) {
+                            resolve(dateMatch[1].trim());
+                        } else {
+                            // If pattern doesn't match, just use the full date
+                            resolve(fullDate);
+                        }
+                    } else {
+                        resolve(null);
+                    }
+                } catch (error) {
+                    console.error("Error extracting date from Excel:", error);
+                    resolve(null);
+                }
+            };
+
+            reader.onerror = () => {
+                console.error("Error reading file for date extraction");
+                resolve(null);
+            };
+
+            reader.readAsBinaryString(file);
+        });
+    } catch (error) {
+        console.error("Error in extractDateFromExcel:", error);
+        return null;
+    }
+};
 
 // Firebase functions API URL
 const FUNCTIONS_BASE_URL = process.env.NEXT_PUBLIC_FIREBASE_FUNCTIONS_URL || "https://us-central1-[YOUR-PROJECT-ID].cloudfunctions.net";
@@ -63,12 +120,40 @@ export const fetchExcelFile = async (filePath: string): Promise<ArrayBuffer> => 
 };
 
 /**
+ * Upload multiple files to Firebase Storage and save metadata to Firestore
+ */
+export const uploadMultipleFiles = async (
+    files: File[],
+    userId: string,
+    path: string = "betting-files"
+): Promise<FileData[]> => {
+    const uploadedFiles: FileData[] = [];
+
+    for (const file of files) {
+        try {
+            // Extract date from Excel file
+            const fileDate = await extractDateFromExcel(file);
+
+            // Upload file and get file data
+            const fileData = await uploadFile(file, userId, path, fileDate);
+            uploadedFiles.push(fileData);
+        } catch (error) {
+            console.error(`Error uploading file ${file.name}:`, error);
+            // Continue with next file even if one fails
+        }
+    }
+
+    return uploadedFiles;
+};
+
+/**
  * Upload a file to Firebase Storage and save metadata to Firestore
  */
 export const uploadFile = async (
     file: File,
     userId: string,
-    path: string = "betting-files"
+    path: string = "betting-files",
+    fileDate?: string | null
 ): Promise<FileData> => {
     try {
         // Create a unique filename
@@ -92,7 +177,8 @@ export const uploadFile = async (
             customMetadata: {
                 userId: userId,
                 originalName: file.name,
-                accessLevel: "public" // Allow public access to this file
+                accessLevel: "public", // Allow public access to this file
+                fileDate: fileDate || "" // Store the date in metadata
             }
         };
 
@@ -114,7 +200,8 @@ export const uploadFile = async (
             uploadDate: Date.now(),
             userId,
             size: file.size,
-            isPublic: true // Mark all files as public by default
+            isPublic: true, // Mark all files as public by default
+            fileDate: fileDate || undefined
         };
 
         // Save to Firestore
@@ -270,5 +357,66 @@ export const cleanupOrphanedFiles = async (userId: string): Promise<void> => {
         }
     } catch (error) {
         console.error("Error cleaning up orphaned files:", error);
+    }
+};
+
+/**
+ * Get files filtered by date
+ */
+export const getFilesByDate = async (date: string): Promise<FileData[]> => {
+    try {
+        console.log("Getting files for date:", date);
+
+        try {
+            // First attempt with exact match + ordering
+            // This requires a composite index
+            const q = query(
+                collection(db, "files"),
+                where("fileDate", "==", date),
+                orderBy("uploadDate", "desc")
+            );
+
+            const querySnapshot = await getDocs(q);
+            const files: FileData[] = [];
+
+            querySnapshot.forEach((doc) => {
+                const fileData = doc.data() as FileData;
+                files.push(fileData);
+            });
+
+            return files;
+        } catch (indexError) {
+            console.warn("Index error, falling back to simpler query:", indexError);
+
+            // Fallback without ordering (doesn't require composite index)
+            const fallbackQuery = query(
+                collection(db, "files"),
+                where("fileDate", "==", date)
+            );
+
+            const fallbackSnapshot = await getDocs(fallbackQuery);
+            const fallbackFiles: FileData[] = [];
+
+            fallbackSnapshot.forEach((doc) => {
+                const fileData = doc.data() as FileData;
+                fallbackFiles.push(fileData);
+            });
+
+            // If fallback with exact match found results, return them
+            if (fallbackFiles.length > 0) {
+                // Sort client-side instead since we can't use orderBy
+                return fallbackFiles.sort((a, b) => b.uploadDate - a.uploadDate);
+            }
+
+            // If still no exact matches, try partial matching (client-side)
+            // Get all files and filter on client
+            const allFiles = await getAllFiles();
+            return allFiles
+                .filter(file => file.fileDate && file.fileDate.includes(date))
+                .sort((a, b) => b.uploadDate - a.uploadDate);
+        }
+    } catch (error) {
+        console.error("Error getting files by date:", error);
+        return [];
     }
 }; 

@@ -1,7 +1,15 @@
 import React, { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useNotification } from "@/context/NotificationContext";
-import { uploadFile, getAllFiles, FileData, cleanupOrphanedFiles, fetchExcelFile, deleteFile } from "@/lib/storage";
+import {
+    uploadMultipleFiles,
+    getAllFiles,
+    FileData,
+    cleanupOrphanedFiles,
+    fetchExcelFile,
+    deleteFile,
+    getFilesByDate
+} from "@/lib/storage";
 import { FirebaseError } from "firebase/app";
 import * as XLSX from "xlsx";
 import AdminOnly from "@/components/AdminOnly";
@@ -51,106 +59,9 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
     const { user } = useAuth();
     const { showNotification } = useNotification();
     const [uploadError, setUploadError] = useState("");
-    const [fileData, setFileData] = useState<FileData | null>(null);
-
-    // Function to fetch saved files from database
-    const fetchSavedFiles = async () => {
-        try {
-            setIsLoadingFiles(true);
-
-            // If user is logged in, clean up their orphaned file records
-            if (user) {
-                await cleanupOrphanedFiles(user.uid);
-            }
-
-            // Get all files regardless of the user
-            const files = await getAllFiles();
-
-            // Automatically load the most recent file (if any exist)
-            if (files.length > 0) {
-                // Sort files by uploadDate (descending order - newest first)
-                const sortedFiles = [...files].sort((a, b) => b.uploadDate - a.uploadDate);
-                const mostRecentFile = sortedFiles[0];
-                setFileData(mostRecentFile);
-
-                // Load the most recent file
-                await handleLoadFile(mostRecentFile);
-            } else {
-                // No files - reset predictions
-                onFileProcessed([]);
-            }
-        } catch (error) {
-            console.error("Error fetching files:", error);
-            showNotification("Error fetching saved files", "error");
-        } finally {
-            setIsLoadingFiles(false);
-        }
-    };
-
-    // Function to handle file upload
-    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file || !user) {
-            if (!user) {
-                showNotification("You must be logged in to upload files", "error");
-            }
-            return;
-        }
-
-        // Check if file is an Excel file
-        const fileExt = file.name.split(".").pop()?.toLowerCase();
-        if (fileExt !== "xlsx" && fileExt !== "xls") {
-            setUploadError("Please upload a valid Excel file (.xlsx or .xls)");
-            showNotification("Please upload a valid Excel file (.xlsx or .xls)", "error");
-            return;
-        }
-
-        setIsUploading(true);
-        setUploadError("");
-
-        try {
-            // Process file data first - if it's not valid, don't upload
-            const isValidExcel = await processExcelFile(file);
-
-            if (!isValidExcel) {
-                throw new Error("Invalid Excel file format");
-            }
-
-            // Upload file to Firebase if Excel content is valid
-            await uploadFile(file, user.uid);
-            showNotification(`File "${file.name}" uploaded successfully`, "success");
-
-            // Refresh file list and automatically select the newly uploaded file
-            await fetchSavedFiles();
-
-            // Note: We don't need to manually call handleLoadFile here as fetchSavedFiles
-            // will automatically load the most recent file (which will be this one)
-        } catch (error: unknown) {
-            console.error("Error uploading file:", error);
-
-            // More specific error message based on error code
-            if (error instanceof FirebaseError) {
-                if (error.code === "storage/unauthorized") {
-                    setUploadError("You don't have permission to upload files. Please check your authentication status.");
-                    showNotification("Permission denied. Please login again.", "error");
-                } else if (error.code === "storage/quota-exceeded") {
-                    setUploadError("Storage quota exceeded. Please contact support.");
-                    showNotification("Storage quota exceeded", "error");
-                } else if (error.code === "storage/invalid-format") {
-                    setUploadError("Invalid file format");
-                    showNotification("Invalid file format", "error");
-                } else {
-                    setUploadError(`Failed to upload file: ${error.message || "Unknown error"}`);
-                    showNotification("Failed to upload file to storage", "error");
-                }
-            } else {
-                setUploadError(`Failed to upload file: ${error instanceof Error ? error.message : "Unknown error"}`);
-                showNotification("Failed to upload file to storage", "error");
-            }
-        } finally {
-            setIsUploading(false);
-        }
-    };
+    const [availableFiles, setAvailableFiles] = useState<FileData[]>([]);
+    const [selectedDate, setSelectedDate] = useState<string>("");
+    const [availableDates, setAvailableDates] = useState<string[]>([]);
 
     // Function to process Excel file - returns true if successful, false otherwise
     const processExcelFile = async (file: File): Promise<boolean> => {
@@ -278,12 +189,227 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
             setIsUploading(false);
         }
     };
+
+    // Function to fetch saved files from database
+    const fetchSavedFiles = async () => {
+        try {
+            setIsLoadingFiles(true);
+
+            // If user is logged in, clean up their orphaned file records
+            if (user) {
+                await cleanupOrphanedFiles(user.uid);
+            }
+
+            // Get all files regardless of the user
+            const files = await getAllFiles();
+            setAvailableFiles(files);
+
+            // Extract unique dates from files
+            const dates = files
+                .map(file => file.fileDate)
+                .filter((date): date is string => !!date)
+                .filter((date, index, self) => self.indexOf(date) === index)
+                .sort();
+
+            setAvailableDates(dates);
+
+            // Automatically load the most recent file (if any exist)
+            if (files.length > 0) {
+                // Sort files by uploadDate (descending order - newest first)
+                const sortedFiles = [...files].sort((a, b) => b.uploadDate - a.uploadDate);
+                const mostRecentFile = sortedFiles[0];
+
+                // Set the selected date if available
+                if (mostRecentFile.fileDate) {
+                    setSelectedDate(mostRecentFile.fileDate);
+                }
+
+                // Load the most recent file
+                await handleLoadFile(mostRecentFile);
+            } else {
+                // No files - reset predictions
+                onFileProcessed([]);
+            }
+        } catch (error) {
+            console.error("Error fetching files:", error);
+            showNotification("Error fetching saved files", "error");
+        } finally {
+            setIsLoadingFiles(false);
+        }
+    };
+
+    // Function to handle file upload (updated for multiple files)
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = e.target.files;
+        if (!files || !files.length || !user) {
+            if (!user) {
+                showNotification("You must be logged in to upload files", "error");
+            }
+            return;
+        }
+
+        setIsUploading(true);
+        setUploadError("");
+
+        // Convert FileList to array
+        const fileArray = Array.from(files);
+
+        // Validate all files are Excel files
+        const invalidFiles = fileArray.filter(file => {
+            const fileExt = file.name.split(".").pop()?.toLowerCase();
+            return fileExt !== "xlsx" && fileExt !== "xls";
+        });
+
+        if (invalidFiles.length > 0) {
+            setUploadError("All files must be valid Excel files (.xlsx or .xls)");
+            showNotification("Please upload only valid Excel files (.xlsx or .xls)", "error");
+            setIsUploading(false);
+            return;
+        }
+
+        try {
+            // Process and validate each file before upload
+            const validFiles: File[] = [];
+
+            for (const file of fileArray) {
+                const isValidExcel = await processExcelFile(file);
+                if (isValidExcel) {
+                    validFiles.push(file);
+                } else {
+                    showNotification(`File "${file.name}" has invalid format and will be skipped`, "warning");
+                }
+            }
+
+            if (validFiles.length === 0) {
+                throw new Error("No valid Excel files to upload");
+            }
+
+            // Upload all valid files
+            const uploadedFiles = await uploadMultipleFiles(validFiles, user.uid);
+
+            if (uploadedFiles.length > 0) {
+                showNotification(`Successfully uploaded ${uploadedFiles.length} file(s)`, "success");
+
+                // Refresh file list and automatically select the newly uploaded file
+                await fetchSavedFiles();
+            } else {
+                showNotification("No files were uploaded successfully", "error");
+            }
+        } catch (error: unknown) {
+            console.error("Error uploading files:", error);
+
+            // More specific error message based on error code
+            if (error instanceof FirebaseError) {
+                if (error.code === "storage/unauthorized") {
+                    setUploadError("You don't have permission to upload files. Please check your authentication status.");
+                    showNotification("Permission denied. Please login again.", "error");
+                } else if (error.code === "storage/quota-exceeded") {
+                    setUploadError("Storage quota exceeded. Please contact support.");
+                    showNotification("Storage quota exceeded", "error");
+                } else if (error.code === "storage/invalid-format") {
+                    setUploadError("Invalid file format");
+                    showNotification("Invalid file format", "error");
+                } else {
+                    setUploadError(`Failed to upload files: ${error.message || "Unknown error"}`);
+                    showNotification("Failed to upload files to storage", "error");
+                }
+            } else {
+                setUploadError(`Failed to upload files: ${error instanceof Error ? error.message : "Unknown error"}`);
+                showNotification("Failed to upload files to storage", "error");
+            }
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
+    // Handle date selection
+    const handleDateChange = async (date: string) => {
+        if (isUploading || isLoadingFiles) return;
+
+        setSelectedDate(date);
+
+        // If "All Dates" option is selected (empty date)
+        if (!date) {
+            // Sort files by uploadDate (newest first) and load the most recent
+            const sortedFiles = [...availableFiles].sort((a, b) => b.uploadDate - a.uploadDate);
+            if (sortedFiles.length > 0) {
+                setIsLoadingFiles(true);
+                try {
+                    await handleLoadFile(sortedFiles[0]);
+                    showNotification("Loaded most recent file", "success");
+                } catch (error) {
+                    console.error("Error loading most recent file:", error);
+                    showNotification("Error loading most recent file", "error");
+                } finally {
+                    setIsLoadingFiles(false);
+                }
+            } else {
+                // No files to load
+                onFileProcessed([]);
+            }
+            return;
+        }
+
+        setIsLoadingFiles(true);
+
+        try {
+            // Get files for the selected date
+            const files = await getFilesByDate(date);
+
+            if (files.length > 0) {
+                // Use the first file with this date and load it automatically
+                await handleLoadFile(files[0]);
+                showNotification(`Loaded data for date: ${formatDateDisplay(date)}`, "success");
+            } else {
+                // Try to find a match in the existing files list
+                const matchingFiles = availableFiles.filter(file =>
+                    file.fileDate && (
+                        file.fileDate === date ||
+                        file.fileDate.includes(date)
+                    )
+                );
+
+                if (matchingFiles.length > 0) {
+                    // Load the first matching file
+                    await handleLoadFile(matchingFiles[0]);
+                    showNotification(`Loaded data for date: ${formatDateDisplay(date)}`, "success");
+                } else {
+                    showNotification(`No files found for date: ${date}`, "warning");
+                    // Clear predictions if no files found
+                    onFileProcessed([]);
+                }
+            }
+        } catch (error) {
+            console.error("Error loading files for date:", error);
+
+            // Check if it's a Firebase index error
+            const errorMessage = error instanceof Error ? error.message : "Unknown error";
+            if (errorMessage.includes("requires an index")) {
+                showNotification("Firebase index is being created. This may take a few minutes. Please try again later or use the 'Load' button on a file directly.", "warning");
+            } else {
+                showNotification("Error loading files for selected date", "error");
+            }
+        } finally {
+            setIsLoadingFiles(false);
+        }
+    };
+
+    // Helper function to format date display
+    const formatDateDisplay = (dateStr: string | undefined): string => {
+        if (!dateStr) return "";
+
+        // Extract main date part if it includes time
+        const dateMatch = dateStr.match(/(\d+[a-z]{2}\s+[A-Za-z]+\s+\d{4})/);
+        return dateMatch && dateMatch[1] ? dateMatch[1].trim() : dateStr;
+    };
+
+    // Handle Delete file function
     const handleDeleteFile = async (id: string) => {
         if (!user) return;
 
         try {
             await deleteFile(id);
-            showNotification(`File "${id}" deleted successfully`, "success");
+            showNotification(`File deleted successfully`, "success");
 
             // Refresh file list - this will automatically load the most recent file
             await fetchSavedFiles();
@@ -297,108 +423,111 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
 
     return (
         <AdminOnly>
-            <div className="flex flex-col md:flex-row md:items-center mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-800 mb-3 md:mb-0 md:mr-4">Admin Excel Management</h3>
+            <div className="mb-6 p-4 bg-white rounded-lg shadow-md">
+                <h2 className="text-lg font-semibold mb-4">Excel File Management</h2>
 
-                <div className="flex flex-col md:flex-row items-start md:items-center">
-                    <div className="relative mr-4 mb-3 md:mb-0">
-                        <input
-                            type="file"
-                            id="fileUpload"
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                            accept=".xlsx,.xls"
-                            onChange={handleFileUpload}
-                            disabled={isUploading || !user}
-                        />
+                {/* Upload Form */}
+                <form className="mb-6">
+                    <div className="flex flex-col md:flex-row items-start gap-4">
+                        <div className="w-full md:w-auto">
+                            <label htmlFor="fileUpload" className="block text-sm font-medium text-gray-700 mb-1">
+                                Upload Excel File(s)
+                            </label>
+                            <input
+                                type="file"
+                                id="fileUpload"
+                                onChange={handleFileUpload}
+                                accept=".xlsx,.xls"
+                                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                                disabled={isUploading}
+                                multiple // Enable multiple file selection
+                            />
+                            {uploadError && <p className="mt-1 text-sm text-red-600">{uploadError}</p>}
+                        </div>
+
                         <button
-                            className={`px-4 py-2 rounded-md font-medium flex items-center ${isUploading ? "bg-blue-300" : user ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-400"
-                                } text-white`}
-                            disabled={isUploading || !user}
+                            type="button"
+                            onClick={() => fetchSavedFiles()}
+                            className={`px-4 py-2 rounded-md font-medium flex items-center mt-2 md:mt-6 ${isLoadingFiles ? "bg-blue-300" : "bg-blue-600 hover:bg-blue-700"} text-white`}
+                            disabled={isLoadingFiles}
                         >
-                            {isUploading ? (
+                            {isLoadingFiles ? (
                                 <>
                                     <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                     </svg>
-                                    Processing...
+                                    Refreshing...
                                 </>
                             ) : (
                                 <>
                                     <svg className="w-4 h-4 mr-2" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M5.5 13a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.977A4.5 4.5 0 1113.5 13H11V9.413l1.293 1.293a1 1 0 001.414-1.414l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13H5.5z" clipRule="evenodd" />
-                                        <path d="M9 13h2v5a1 1 0 11-2 0v-5z" />
+                                        <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
                                     </svg>
-                                    Upload Excel File
+                                    Refresh Files
                                 </>
                             )}
                         </button>
                     </div>
+                </form>
 
-                    <button
-                        onClick={() => fetchSavedFiles()}
-                        className={`px-4 py-2 rounded-md font-medium flex items-center mr-4 mb-3 md:mb-0 ${isLoadingFiles ? "bg-blue-300" : "bg-blue-600 hover:bg-blue-700"} text-white`}
-                        disabled={isLoadingFiles}
-                    >
-                        {isLoadingFiles ? (
-                            <>
-                                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                Refreshing...
-                            </>
-                        ) : (
-                            <>
-                                <svg className="w-4 h-4 mr-2" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
-                                </svg>
-                                Refresh Files
-                            </>
-                        )}
-                    </button>
-
-                    <button
-                        onClick={async () => {
-                            if (!user) return;
-                            try {
-                                setIsLoadingFiles(true);
-                                showNotification("Cleaning up orphaned files...", "info");
-                                await handleDeleteFile(fileData?.id ?? "");
-                                await fetchSavedFiles();
-                                showNotification("Cleanup completed successfully", "success");
-                            } catch (error) {
-                                console.error("Error during cleanup:", error);
-                                showNotification("Error during cleanup", "error");
-                            } finally {
-                                setIsLoadingFiles(false);
-                            }
-                        }}
-                        className="px-4 py-2 rounded-md font-medium flex items-center bg-amber-600 hover:bg-amber-700 text-white"
-                        disabled={isLoadingFiles}
-                    >
-                        <svg className="w-4 h-4 mr-2" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                        </svg>
-                        Clean Up
-                    </button>
-                </div>
-            </div>
-
-            {uploadError && (
-                <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-4">
-                    <div className="flex">
-                        <div className="flex-shrink-0">
-                            <svg className="h-5 w-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                            </svg>
-                        </div>
-                        <div className="ml-3">
-                            <p className="text-sm text-red-700">{uploadError}</p>
-                        </div>
+                {/* Date Filter */}
+                {availableDates.length > 0 && (
+                    <div className="mb-6">
+                        <label htmlFor="dateFilter" className="block text-sm font-medium text-gray-700 mb-1">
+                            Filter by Date
+                        </label>
+                        <select
+                            id="dateFilter"
+                            value={selectedDate}
+                            onChange={(e) => handleDateChange(e.target.value)}
+                            className="block w-full md:w-64 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                            disabled={isLoadingFiles || isUploading}
+                        >
+                            <option value="">All Dates</option>
+                            {availableDates.map((date) => (
+                                <option key={date} value={date}>{formatDateDisplay(date)}</option>
+                            ))}
+                        </select>
                     </div>
-                </div>
-            )}
+                )}
+
+                {/* Available Files List */}
+                {availableFiles.length > 0 && (
+                    <div className="border rounded-md overflow-hidden">
+                        <h3 className="px-4 py-2 bg-gray-50 border-b font-medium">Available Files</h3>
+                        <ul className="divide-y divide-gray-200 max-h-64 overflow-y-auto">
+                            {availableFiles
+                                .filter(file => !selectedDate || file.fileDate === selectedDate)
+                                .map((file) => (
+                                    <li key={file.id} className="px-4 py-3 hover:bg-gray-50 flex justify-between items-center">
+                                        <div>
+                                            <p className="font-medium text-sm text-gray-800">{file.fileName}</p>
+                                            {file.fileDate && <p className="text-xs text-gray-500">Date: {formatDateDisplay(file.fileDate)}</p>}
+                                            <p className="text-xs text-gray-500">Uploaded: {new Date(file.uploadDate).toLocaleString()}</p>
+                                        </div>
+                                        <div className="flex space-x-2">
+                                            <button
+                                                onClick={() => handleLoadFile(file)}
+                                                className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 transition-colors"
+                                                disabled={isUploading || isLoadingFiles}
+                                            >
+                                                Load
+                                            </button>
+                                            <button
+                                                onClick={() => handleDeleteFile(file.id)}
+                                                className="text-xs px-2 py-1 bg-red-50 text-red-700 rounded hover:bg-red-100 transition-colors"
+                                                disabled={isUploading || isLoadingFiles}
+                                            >
+                                                Delete
+                                            </button>
+                                        </div>
+                                    </li>
+                                ))}
+                        </ul>
+                    </div>
+                )}
+            </div>
         </AdminOnly>
     );
 };

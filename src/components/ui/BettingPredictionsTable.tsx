@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { PieChart } from "react-minimal-pie-chart";
 import * as XLSX from "xlsx";
 import { useNotification } from "@/context/NotificationContext";
-import { getAllFiles, FileData, fetchExcelFile } from "@/lib/storage";
+import { getAllFiles, FileData, fetchExcelFile, getFilesByDate } from "@/lib/storage";
 import AdminExcelPanel from "@/components/admin/AdminExcelPanel";
 
 interface BettingPrediction {
@@ -33,16 +33,52 @@ interface ExcelRowData {
     [key: string]: string | number | undefined;
 }
 
+// Helper function to format date display
+const formatDateDisplay = (dateStr: string | undefined): string => {
+    if (!dateStr) return "";
+
+    // Extract main date part if it includes time
+    const dateMatch = dateStr.match(/(\d+[a-z]{2}\s+[A-Za-z]+\s+\d{4})/);
+    return dateMatch && dateMatch[1] ? dateMatch[1].trim() : dateStr;
+};
+
 const BettingPredictionsTable: React.FC = () => {
 
     const { showNotification } = useNotification();
     const [predictions, setPredictions] = useState<BettingPrediction[]>([]);
+    const [filteredPredictions, setFilteredPredictions] = useState<BettingPrediction[]>([]);
     const [isUploading, setIsUploading] = useState(false);
     const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+    const [selectedDate, setSelectedDate] = useState<string>("");
+    const [availableDates, setAvailableDates] = useState<string[]>([]);
 
     // Pagination states
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage] = useState(14);
+
+    // Effect to filter predictions by date
+    useEffect(() => {
+        if (!selectedDate) {
+            // If no date selected, show all predictions
+            setFilteredPredictions(predictions);
+        } else {
+            // Filter predictions by selected date 
+            // Now using the simplified date format without time component
+            const filtered = predictions.filter(pred => {
+                if (!pred.date) return false;
+
+                // Extract the main date part if it has a time component
+                const dateMatch = pred.date.match(/(\d+[a-z]{2}\s+[A-Za-z]+\s+\d{4})/);
+                const mainDate = dateMatch && dateMatch[1] ? dateMatch[1].trim() : pred.date;
+
+                // Compare with selected date
+                return mainDate === selectedDate || pred.date.includes(selectedDate);
+            });
+            setFilteredPredictions(filtered);
+        }
+        // Reset to first page whenever the filter changes
+        setCurrentPage(1);
+    }, [selectedDate, predictions]);
 
     // Fetch saved files when component mounts
     useEffect(() => {
@@ -57,11 +93,25 @@ const BettingPredictionsTable: React.FC = () => {
             // Get all files regardless of the user
             const files = await getAllFiles();
 
+            // Extract unique dates from files
+            const dates = files
+                .map(file => file.fileDate)
+                .filter((date): date is string => !!date)
+                .filter((date, index, self) => self.indexOf(date) === index)
+                .sort();
+
+            setAvailableDates(dates);
+
             // Automatically load the most recent file (if any exist)
             if (files.length > 0) {
                 // Sort files by uploadDate (descending order - newest first)
                 const sortedFiles = [...files].sort((a, b) => b.uploadDate - a.uploadDate);
                 const mostRecentFile = sortedFiles[0];
+
+                // Set the selected date if available
+                if (mostRecentFile.fileDate) {
+                    setSelectedDate(mostRecentFile.fileDate);
+                }
 
                 // Load the most recent file
                 await handleLoadFile(mostRecentFile);
@@ -77,13 +127,62 @@ const BettingPredictionsTable: React.FC = () => {
         }
     };
 
+    // Function to handle date selection
+    const handleDateChange = async (date: string) => {
+        if (isUploading || isLoadingFiles) return;
+
+        setSelectedDate(date);
+
+        // If "All Dates" option is selected
+        if (!date) {
+            // Just show all existing predictions
+            return;
+        }
+
+        setIsLoadingFiles(true);
+
+        try {
+            // Get files for the selected date
+            const files = await getFilesByDate(date);
+
+            if (files.length > 0) {
+                // Load the first file with this date
+                await handleLoadFile(files[0]);
+                // Date filtering will be automatically applied through the useEffect
+                showNotification(`Loaded data for date: ${formatDateDisplay(date)}`, "success");
+            } else {
+                // Try filtering existing data if already loaded
+                const existingMatches = predictions.filter(pred => {
+                    if (!pred.date) return false;
+                    // Extract the main date part if it has a time component
+                    const dateMatch = pred.date.match(/(\d+[a-z]{2}\s+[A-Za-z]+\s+\d{4})/);
+                    const mainDate = dateMatch && dateMatch[1] ? dateMatch[1].trim() : pred.date;
+                    return mainDate === date || pred.date.includes(date);
+                });
+
+                if (existingMatches.length > 0) {
+                    // We already have data for this date in our predictions
+                    showNotification(`Found data for date: ${formatDateDisplay(date)}`, "success");
+                } else {
+                    showNotification(`No files found for date: ${formatDateDisplay(date)}`, "warning");
+                    // Don't clear all predictions, just filter to empty set
+                    // The useEffect will take care of this
+                }
+            }
+        } catch (error) {
+            console.error("Error loading files for date:", error);
+            showNotification("Error loading files for selected date. The Firebase index may still be creating.", "error");
+        } finally {
+            setIsLoadingFiles(false);
+        }
+    };
+
     // Function to load file data from storage
     const handleLoadFile = async (fileData: FileData) => {
         if (isUploading) return;
         setIsUploading(true);
 
         try {
-
             // Use the new fetchExcelFile function to avoid CORS issues
             const arrayBuffer = await fetchExcelFile(fileData.filePath);
 
@@ -106,7 +205,6 @@ const BettingPredictionsTable: React.FC = () => {
                 }
                 // Map the Excel data to our BettingPrediction interface
                 const mappedData = jsonData.map((row: ExcelRowData) => {
-
                     return {
                         date: row.Date ?? "",
                         team1: row.Team_1 ?? "",
@@ -158,8 +256,8 @@ const BettingPredictionsTable: React.FC = () => {
     // Get current predictions for pagination
     const indexOfLastItem = currentPage * itemsPerPage;
     const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-    const currentPredictions = predictions.slice(indexOfFirstItem, indexOfLastItem);
-    const totalPages = Math.ceil(predictions.length / itemsPerPage);
+    const currentPredictions = filteredPredictions.slice(indexOfFirstItem, indexOfLastItem);
+    const totalPages = Math.ceil(filteredPredictions.length / itemsPerPage);
 
     // Change page
     const handlePageChange = (pageNumber: number) => {
@@ -228,8 +326,29 @@ const BettingPredictionsTable: React.FC = () => {
                 setIsLoadingFiles={setIsLoadingFiles}
             />
 
+            {/* Date Filter */}
+            {availableDates.length > 0 && (
+                <div className="mb-6">
+                    <label htmlFor="dateFilter" className="block text-sm font-medium text-gray-700 mb-1">
+                        Filter by Date
+                    </label>
+                    <select
+                        id="dateFilter"
+                        value={selectedDate}
+                        onChange={(e) => handleDateChange(e.target.value)}
+                        className="block w-full md:w-64 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                        disabled={isLoadingFiles || isUploading}
+                    >
+                        <option value="">All Dates</option>
+                        {availableDates.map((date) => (
+                            <option key={date} value={date}>{formatDateDisplay(date)}</option>
+                        ))}
+                    </select>
+                </div>
+            )}
+
             <div className="overflow-x-auto">
-                {predictions && predictions.length > 0 ? (
+                {filteredPredictions && filteredPredictions.length > 0 ? (
                     <>
                         <table className="min-w-full bg-white border border-gray-200 shadow-md rounded-lg overflow-hidden">
                             <thead className="bg-gray-100">
@@ -252,7 +371,7 @@ const BettingPredictionsTable: React.FC = () => {
                                         key={index}
                                         className={`${index % 2 === 0 ? "bg-gray-50" : "bg-white"} border-t border-gray-200`}
                                     >
-                                        <td className="py-3 px-4 text-gray-800">{prediction.date}</td>
+                                        <td className="py-3 px-4 text-gray-800">{formatDateDisplay(prediction.date)}</td>
                                         <td className="py-3 px-4 text-gray-800 font-semibold">{prediction.team1}</td>
                                         <td className="py-3 px-4 text-gray-800 font-bold">{prediction.oddTeam1.toFixed(3)}</td>
                                         <td className="py-3 px-4 text-gray-800 font-semibold">{prediction.team2}</td>
@@ -304,8 +423,8 @@ const BettingPredictionsTable: React.FC = () => {
                             <div className="flex items-center">
                                 <p className="text-sm text-gray-700">
                                     Showing <span className="font-medium">{indexOfFirstItem + 1}</span> to{" "}
-                                    <span className="font-medium">{Math.min(indexOfLastItem, predictions.length)}</span> of{" "}
-                                    <span className="font-medium">{predictions.length}</span> results
+                                    <span className="font-medium">{Math.min(indexOfLastItem, filteredPredictions.length)}</span> of{" "}
+                                    <span className="font-medium">{filteredPredictions.length}</span> results
                                 </p>
                             </div>
                             <div className="flex items-center space-x-2">
@@ -347,15 +466,16 @@ const BettingPredictionsTable: React.FC = () => {
                         </div>
                     </>
                 ) : (
-                    <div className="bg-white border border-gray-200 shadow-md rounded-lg p-8 text-center">
-                        <svg className="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <h3 className="text-lg font-semibold text-gray-800 mb-2">No predictions available</h3>
-                        <div className="text-gray-600 mb-4">
-                            <p className="mb-1"><span className="font-bold text-amber-600">No predictions</span> - Upload an Excel file to view betting predictions</p>
-                        </div>
-
+                    <div className="bg-white p-6 text-center rounded-lg shadow-md">
+                        <h3 className="text-lg font-semibold text-gray-700 mb-2">No Predictions Available</h3>
+                        <p className="text-gray-500">
+                            {isLoadingFiles
+                                ? "Loading predictions..."
+                                : selectedDate
+                                    ? `No predictions found for the selected date: ${formatDateDisplay(selectedDate)}`
+                                    : "Please upload an Excel file with betting predictions."
+                            }
+                        </p>
                     </div>
                 )}
             </div>
