@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useNotification } from "@/context/NotificationContext";
-import { uploadFile, getAllFiles, FileData, cleanupOrphanedFiles, fetchExcelFile } from "@/lib/storage";
+import { uploadFile, getAllFiles, FileData, cleanupOrphanedFiles, fetchExcelFile, deleteFile } from "@/lib/storage";
 import { FirebaseError } from "firebase/app";
 import * as XLSX from "xlsx";
 import AdminOnly from "@/components/AdminOnly";
@@ -51,6 +51,7 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
     const { user } = useAuth();
     const { showNotification } = useNotification();
     const [uploadError, setUploadError] = useState("");
+    const [fileData, setFileData] = useState<FileData | null>(null);
 
     // Function to fetch saved files from database
     const fetchSavedFiles = async () => {
@@ -70,6 +71,7 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
                 // Sort files by uploadDate (descending order - newest first)
                 const sortedFiles = [...files].sort((a, b) => b.uploadDate - a.uploadDate);
                 const mostRecentFile = sortedFiles[0];
+                setFileData(mostRecentFile);
 
                 // Load the most recent file
                 await handleLoadFile(mostRecentFile);
@@ -276,6 +278,22 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
             setIsUploading(false);
         }
     };
+    const handleDeleteFile = async (id: string) => {
+        if (!user) return;
+
+        try {
+            await deleteFile(id);
+            showNotification(`File "${id}" deleted successfully`, "success");
+
+            // Refresh file list - this will automatically load the most recent file
+            await fetchSavedFiles();
+
+        } catch (error: unknown) {
+            console.error("Error deleting file:", error);
+            const errorMessage = error instanceof Error ? error.message : "Unknown error";
+            showNotification(`Failed to delete file: ${errorMessage}`, "error");
+        }
+    };
 
     return (
         <AdminOnly>
@@ -346,7 +364,7 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
                             try {
                                 setIsLoadingFiles(true);
                                 showNotification("Cleaning up orphaned files...", "info");
-                                await cleanupOrphanedFiles(user.uid);
+                                await handleDeleteFile(fileData?.id ?? "");
                                 await fetchSavedFiles();
                                 showNotification("Cleanup completed successfully", "success");
                             } catch (error) {
