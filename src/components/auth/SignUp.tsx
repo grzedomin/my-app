@@ -122,27 +122,31 @@ export default function SignUp() {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-            <div className="max-w-md w-full space-y-8">
+        <div
+            className="min-h-screen flex items-center justify-center bg-cover bg-center"
+            style={{ backgroundImage: "url('/background.avif')" }}
+        >
+            <div className="absolute inset-0 bg-black bg-opacity-50"></div>
+            <div className="max-w-md w-full bg-white rounded-xl shadow-2xl p-8 z-10">
                 <div>
-                    <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+                    <h2 className="text-center text-3xl font-extrabold text-gray-900 mb-6">
                         Create your account
                     </h2>
                 </div>
                 {error && (
-                    <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative">
+                    <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4">
                         <span className="block sm:inline">{error}</span>
                     </div>
                 )}
                 {success && (
-                    <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative">
+                    <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-4">
                         <span className="block sm:inline">{success}</span>
                     </div>
                 )}
-                <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-                    <div className="rounded-md shadow-sm space-y-4">
+                <form className="space-y-6" onSubmit={handleSubmit}>
+                    <div className="space-y-4">
                         <div>
-                            <label htmlFor="email" className="sr-only">
+                            <label htmlFor="email" className="block text-sm font-medium text-gray-700">
                                 Email address
                             </label>
                             <input
@@ -151,8 +155,8 @@ export default function SignUp() {
                                 type="email"
                                 autoComplete="email"
                                 required
-                                className={`appearance-none rounded-md relative block w-full px-3 py-2 border ${emailError ? "border-red-300" : "border-gray-300"
-                                    } placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm`}
+                                className={`mt-1 appearance-none rounded-md relative block w-full px-3 py-2 border ${emailError ? "border-red-300" : "border-gray-300"
+                                    } placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm`}
                                 placeholder="Email address"
                                 value={email}
                                 onChange={handleEmailChange}
@@ -166,7 +170,7 @@ export default function SignUp() {
                             )}
                         </div>
                         <div>
-                            <label htmlFor="password" className="sr-only">
+                            <label htmlFor="password" className="block text-sm font-medium text-gray-700">
                                 Password
                             </label>
                             <input
@@ -175,8 +179,8 @@ export default function SignUp() {
                                 type="password"
                                 autoComplete="new-password"
                                 required
-                                className={`appearance-none rounded-md relative block w-full px-3 py-2 border ${passwordError ? "border-red-300" : "border-gray-300"
-                                    } placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm`}
+                                className={`mt-1 appearance-none rounded-md relative block w-full px-3 py-2 border ${passwordError ? "border-red-300" : "border-gray-300"
+                                    } placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm`}
                                 placeholder="Password (min 6 characters, with a number and uppercase letter)"
                                 value={password}
                                 onChange={handlePasswordChange}
@@ -190,7 +194,7 @@ export default function SignUp() {
                             )}
                         </div>
                         <div>
-                            <label htmlFor="confirm-password" className="sr-only">
+                            <label htmlFor="confirm-password" className="block text-sm font-medium text-gray-700">
                                 Confirm Password
                             </label>
                             <input
@@ -199,8 +203,8 @@ export default function SignUp() {
                                 type="password"
                                 autoComplete="new-password"
                                 required
-                                className={`appearance-none rounded-md relative block w-full px-3 py-2 border ${confirmPasswordError ? "border-red-300" : "border-gray-300"
-                                    } placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm`}
+                                className={`mt-1 appearance-none rounded-md relative block w-full px-3 py-2 border ${confirmPasswordError ? "border-red-300" : "border-gray-300"
+                                    } placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm`}
                                 placeholder="Confirm password"
                                 value={confirmPassword}
                                 onChange={handleConfirmPasswordChange}
@@ -218,16 +222,16 @@ export default function SignUp() {
                     <div>
                         <button
                             type="submit"
-                            className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                            className="w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                         >
                             Sign up
                         </button>
                     </div>
 
-                    <div className="text-center">
+                    <div className="text-center mt-4">
                         <Link
                             href="/auth/signin"
-                            className="font-medium text-indigo-600 hover:text-indigo-500"
+                            className="font-medium text-blue-600 hover:text-blue-500"
                         >
                             Already have an account? Sign in
                         </Link>
