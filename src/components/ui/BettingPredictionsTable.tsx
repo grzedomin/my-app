@@ -52,10 +52,6 @@ const BettingPredictionsTable: React.FC = () => {
     const [selectedDate, setSelectedDate] = useState<string>("");
     const [availableDates, setAvailableDates] = useState<string[]>([]);
 
-    // Pagination states
-    const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage] = useState(14);
-
     // Effect to filter predictions by date
     useEffect(() => {
         if (!selectedDate) {
@@ -76,8 +72,6 @@ const BettingPredictionsTable: React.FC = () => {
             });
             setFilteredPredictions(filtered);
         }
-        // Reset to first page whenever the filter changes
-        setCurrentPage(1);
     }, [selectedDate, predictions]);
 
     // Fetch saved files when component mounts
@@ -253,68 +247,6 @@ const BettingPredictionsTable: React.FC = () => {
         }
     };
 
-    // Get current predictions for pagination
-    const indexOfLastItem = currentPage * itemsPerPage;
-    const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-    const currentPredictions = filteredPredictions.slice(indexOfFirstItem, indexOfLastItem);
-    const totalPages = Math.ceil(filteredPredictions.length / itemsPerPage);
-
-    // Change page
-    const handlePageChange = (pageNumber: number) => {
-        setCurrentPage(pageNumber);
-    };
-
-    // Previous page
-    const handlePreviousPage = () => {
-        if (currentPage > 1) {
-            setCurrentPage(currentPage - 1);
-        }
-    };
-
-    // Next page
-    const handleNextPage = () => {
-        if (currentPage < totalPages) {
-            setCurrentPage(currentPage + 1);
-        }
-    };
-
-    // Generate page numbers
-    const getPageNumbers = () => {
-        const pageNumbers = [];
-        const maxPageButtonsToShow = 5;
-
-        if (totalPages <= maxPageButtonsToShow) {
-            // If we have fewer pages than the max to show, display all pages
-            for (let i = 1; i <= totalPages; i++) {
-                pageNumbers.push(i);
-            }
-        } else {
-            // More complex logic for many pages
-            const halfWay = Math.ceil(maxPageButtonsToShow / 2);
-
-            // If we're in the first halfWay pages
-            if (currentPage <= halfWay) {
-                for (let i = 1; i <= maxPageButtonsToShow; i++) {
-                    pageNumbers.push(i);
-                }
-            }
-            // If we're in the last halfWay pages
-            else if (currentPage > totalPages - halfWay) {
-                for (let i = totalPages - maxPageButtonsToShow + 1; i <= totalPages; i++) {
-                    pageNumbers.push(i);
-                }
-            }
-            // If we're in the middle
-            else {
-                for (let i = currentPage - Math.floor(maxPageButtonsToShow / 2); i <= currentPage + Math.floor(maxPageButtonsToShow / 2); i++) {
-                    pageNumbers.push(i);
-                }
-            }
-        }
-
-        return pageNumbers;
-    };
-
     return (
         <div className="w-full">
             {/* Admin Excel Management Panel */}
@@ -347,45 +279,45 @@ const BettingPredictionsTable: React.FC = () => {
                 </div>
             )}
 
-            <div className="overflow-x-auto -mx-4 sm:mx-0">
+            <div className="overflow-x-auto w-full">
                 {filteredPredictions && filteredPredictions.length > 0 ? (
                     <>
                         {/* Desktop Table - Hidden on small screens */}
-                        <div className="hidden md:block">
-                            <table className="min-w-full bg-white border border-gray-200 shadow-md rounded-lg overflow-hidden">
+                        <div className="hidden md:block w-full">
+                            <table className="w-full bg-white border border-gray-200 shadow-md rounded-lg overflow-hidden">
                                 <thead className="bg-gray-100">
                                     <tr>
-                                        <th className="py-3 px-4 text-left font-bold text-gray-700">Date</th>
-                                        <th className="py-3 px-4 text-left font-bold text-gray-700">Team 1</th>
-                                        <th className="py-3 px-4 text-left font-bold text-gray-700">Odd</th>
-                                        <th className="py-3 px-4 text-left font-bold text-gray-700">Team 2</th>
-                                        <th className="py-3 px-4 text-left font-bold text-gray-700">Odd</th>
-                                        <th className="py-3 px-4 text-left font-bold text-gray-700">Score Prediction</th>
-                                        <th className="py-3 px-4 text-left font-bold text-gray-700">Confidence</th>
-                                        <th className="py-3 px-4 text-left font-bold text-gray-700">Betting Predictions Team 1 Win</th>
-                                        <th className="py-3 px-4 text-left font-bold text-gray-700">Betting Predictions Team 2 Win</th>
-                                        <th className="py-3 px-4 text-left font-bold text-gray-700">Final Score</th>
+                                        <th className="py-3 px-4 text-center font-bold text-gray-700 w-[12%]">Date</th>
+                                        <th className="py-3 px-4 text-center font-bold text-gray-700">Team 1</th>
+                                        <th className="py-3 px-4 text-center font-bold text-gray-700 w-[8%]">Odd</th>
+                                        <th className="py-3 px-4 text-center font-bold text-gray-700">Team 2</th>
+                                        <th className="py-3 px-4 text-center font-bold text-gray-700 w-[8%]">Odd</th>
+                                        <th className="py-3 px-4 text-center font-bold text-gray-700 w-[15%]">Score Prediction</th>
+                                        <th className="py-3 px-4 text-center font-bold text-gray-700">Confidence</th>
+                                        <th className="py-3 px-4 text-center font-bold text-gray-700 w-[10%]">Team 1 Win</th>
+                                        <th className="py-3 px-4 text-center font-bold text-gray-700 w-[10%]">Team 2 Win</th>
+                                        <th className="py-3 px-4 text-center font-bold text-gray-700 w-[15%]">Final Score</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {currentPredictions.map((prediction, index) => (
+                                    {filteredPredictions.map((prediction, index) => (
                                         <tr
                                             key={index}
                                             className={`${index % 2 === 0 ? "bg-gray-50" : "bg-white"} border-t border-gray-200`}
                                         >
-                                            <td className="py-3 px-4 text-gray-800">{formatDateDisplay(prediction.date)}</td>
-                                            <td className="py-3 px-4 text-gray-800 font-semibold">{prediction.team1}</td>
-                                            <td className="py-3 px-4 text-gray-800 font-bold">{prediction.oddTeam1.toFixed(3)}</td>
-                                            <td className="py-3 px-4 text-gray-800 font-semibold">{prediction.team2}</td>
-                                            <td className="py-3 px-4 text-gray-800 font-bold">{prediction.oddTeam2.toFixed(3)}</td>
-                                            <td className="py-3 px-4 text-gray-800 font-medium">{prediction.scorePrediction}</td>
-                                            <td className="py-3 px-4">
+                                            <td className="py-3 px-4 text-center text-gray-800 w-[12%]">{formatDateDisplay(prediction.date)}</td>
+                                            <td className="py-3 px-4 text-center text-gray-800 font-semibold">{prediction.team1}</td>
+                                            <td className="py-3 px-4 text-center text-gray-800 w-[8%]">{prediction.oddTeam1.toFixed(3)}</td>
+                                            <td className="py-3 px-4 text-center text-gray-800 font-semibold">{prediction.team2}</td>
+                                            <td className="py-3 px-4 text-center text-gray-800 w-[8%]">{prediction.oddTeam2.toFixed(3)}</td>
+                                            <td className="py-3 px-4 text-center text-gray-800 font-bold w-[15%]">{prediction.scorePrediction}</td>
+                                            <td className="py-3 px-4 text-center">
                                                 {prediction.confidence > 0 ? (
-                                                    <div className="flex items-center">
+                                                    <div className="flex items-center justify-center">
                                                         <div className="w-10 h-10 mr-2">
                                                             <PieChart
                                                                 data={[
-                                                                    { value: prediction.confidence, color: prediction.confidence > 70 ? "#4ade80" : prediction.confidence < 50 ? "#f87171" : "#fdba74" }
+                                                                    { value: isNaN(prediction.confidence) ? 0 : prediction.confidence, color: !isNaN(prediction.confidence) && prediction.confidence > 70 ? "#4ade80" : !isNaN(prediction.confidence) && prediction.confidence < 50 ? "#f87171" : "#fdba74" }
                                                                 ]}
                                                                 totalValue={100}
                                                                 lineWidth={20}
@@ -394,24 +326,22 @@ const BettingPredictionsTable: React.FC = () => {
                                                                 animate
                                                             />
                                                         </div>
-                                                        <span className={`font-bold ${prediction.confidence > 70 ? "text-green-500" :
-                                                            prediction.confidence < 50 ? "text-red-500" :
+                                                        <span className={`font-bold ${!isNaN(prediction.confidence) && prediction.confidence > 70 ? "text-green-500" :
+                                                            !isNaN(prediction.confidence) && prediction.confidence < 50 ? "text-red-500" :
                                                                 "text-amber-500"
                                                             }`}>
-                                                            {prediction.confidence.toFixed(2)}%
+                                                            {isNaN(prediction.confidence) ? "0.00" : prediction.confidence.toFixed(2)}%
                                                         </span>
                                                     </div>
                                                 ) : "N/A"}
                                             </td>
-                                            <td className={`py-3 px-4 text-gray-800 ${prediction.bettingPredictionTeam1Win > prediction.bettingPredictionTeam2Win ? "bg-green-100" : ""
-                                                }`}>
+                                            <td className={`py-3 px-4 text-center text-gray-800 w-[10%]`}>
                                                 {prediction.bettingPredictionTeam1Win > 0 ? `${prediction.bettingPredictionTeam1Win}%` : ""}
                                             </td>
-                                            <td className={`py-3 px-4 text-gray-800 ${prediction.bettingPredictionTeam2Win > prediction.bettingPredictionTeam1Win ? "bg-green-100" : ""
-                                                }`}>
+                                            <td className={`py-3 px-4 text-center text-gray-800 w-[10%]`}>
                                                 {prediction.bettingPredictionTeam2Win > 0 ? `${prediction.bettingPredictionTeam2Win}%` : ""}
                                             </td>
-                                            <td className={`py-3 px-4 text-gray-800 font-bold ${prediction.finalScore && isBetSuccessful(prediction) ? "bg-green-100" : ""
+                                            <td className={`py-3 px-4 text-center text-gray-800 font-bold w-[15%] ${prediction.finalScore && isBetSuccessful(prediction) ? "bg-green-100" : ""
                                                 }`}>
                                                 {prediction.finalScore}
                                             </td>
@@ -422,19 +352,19 @@ const BettingPredictionsTable: React.FC = () => {
                         </div>
 
                         {/* Mobile & Tablet Card View - Only visible on small screens */}
-                        <div className="md:hidden px-4">
-                            {currentPredictions.map((prediction, index) => (
+                        <div className="md:hidden px-0 sm:px-0 w-full">
+                            {filteredPredictions.map((prediction, index) => (
                                 <div
                                     key={index}
                                     className={`mb-4 p-4 rounded-lg border ${prediction.finalScore && isBetSuccessful(prediction) ? "border-green-300 bg-green-50" : "border-gray-200 bg-white"}`}
                                 >
                                     <div className="mb-3 pb-2 border-b border-gray-200 flex justify-between">
-                                        <div className="text-sm text-gray-500">{formatDateDisplay(prediction.date)}</div>
-                                        <div className="text-sm font-medium">{prediction.scorePrediction}</div>
+                                        <div className="text-sm text-gray-500 text-center">{formatDateDisplay(prediction.date)}</div>
+                                        <div className="text-sm font-medium text-center">{prediction.scorePrediction}</div>
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-3 mb-3">
-                                        <div>
+                                        <div className="text-center">
                                             <div className="text-sm text-gray-500">Team 1</div>
                                             <div className="font-semibold">{prediction.team1}</div>
                                             <div className="font-bold text-gray-700">{prediction.oddTeam1.toFixed(3)}</div>
@@ -442,7 +372,7 @@ const BettingPredictionsTable: React.FC = () => {
                                                 Win: {prediction.bettingPredictionTeam1Win}%
                                             </div>
                                         </div>
-                                        <div>
+                                        <div className="text-center">
                                             <div className="text-sm text-gray-500">Team 2</div>
                                             <div className="font-semibold">{prediction.team2}</div>
                                             <div className="font-bold text-gray-700">{prediction.oddTeam2.toFixed(3)}</div>
@@ -453,13 +383,13 @@ const BettingPredictionsTable: React.FC = () => {
                                     </div>
 
                                     <div className="flex justify-between items-center mt-3 pt-2 border-t border-gray-200">
-                                        <div>
+                                        <div className="text-center">
                                             <div className="text-sm text-gray-500">Confidence</div>
-                                            <div className="flex items-center">
+                                            <div className="flex items-center justify-center">
                                                 <div className="w-6 h-6 mr-2">
                                                     <PieChart
                                                         data={[
-                                                            { value: prediction.confidence, color: prediction.confidence > 70 ? "#4ade80" : prediction.confidence < 50 ? "#f87171" : "#fdba74" }
+                                                            { value: isNaN(prediction.confidence) ? 0 : prediction.confidence, color: !isNaN(prediction.confidence) && prediction.confidence > 70 ? "#4ade80" : !isNaN(prediction.confidence) && prediction.confidence < 50 ? "#f87171" : "#fdba74" }
                                                         ]}
                                                         totalValue={100}
                                                         lineWidth={20}
@@ -468,68 +398,21 @@ const BettingPredictionsTable: React.FC = () => {
                                                         animate
                                                     />
                                                 </div>
-                                                <span className={`font-bold text-sm ${prediction.confidence > 70 ? "text-green-500" :
-                                                    prediction.confidence < 50 ? "text-red-500" :
+                                                <span className={`font-bold text-sm ${!isNaN(prediction.confidence) && prediction.confidence > 70 ? "text-green-500" :
+                                                    !isNaN(prediction.confidence) && prediction.confidence < 50 ? "text-red-500" :
                                                         "text-amber-500"
                                                     }`}>
-                                                    {prediction.confidence.toFixed(2)}%
+                                                    {isNaN(prediction.confidence) ? "0.00" : prediction.confidence.toFixed(2)}%
                                                 </span>
                                             </div>
                                         </div>
-                                        <div>
+                                        <div className="text-center">
                                             <div className="text-sm text-gray-500">Final Score</div>
                                             <div className="font-bold">{prediction.finalScore || "Pending"}</div>
                                         </div>
                                     </div>
                                 </div>
                             ))}
-                        </div>
-
-                        {/* Pagination Controls */}
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mt-6 px-4 py-3 bg-white border border-gray-200 rounded-lg">
-                            <div className="flex items-center mb-3 sm:mb-0">
-                                <p className="text-sm text-gray-700">
-                                    Showing <span className="font-medium">{indexOfFirstItem + 1}</span> to{" "}
-                                    <span className="font-medium">{Math.min(indexOfLastItem, filteredPredictions.length)}</span> of{" "}
-                                    <span className="font-medium">{filteredPredictions.length}</span> results
-                                </p>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2">
-                                <button
-                                    onClick={handlePreviousPage}
-                                    disabled={currentPage === 1}
-                                    className={`px-3 py-1 rounded-md ${currentPage === 1
-                                        ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                                        : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                                        }`}
-                                >
-                                    Previous
-                                </button>
-
-                                {getPageNumbers().map(number => (
-                                    <button
-                                        key={number}
-                                        onClick={() => handlePageChange(number)}
-                                        className={`px-3 py-1 rounded-md ${currentPage === number
-                                            ? "bg-blue-600 text-white"
-                                            : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                                            }`}
-                                    >
-                                        {number}
-                                    </button>
-                                ))}
-
-                                <button
-                                    onClick={handleNextPage}
-                                    disabled={currentPage === totalPages}
-                                    className={`px-3 py-1 rounded-md ${currentPage === totalPages
-                                        ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                                        : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                                        }`}
-                                >
-                                    Next
-                                </button>
-                            </div>
                         </div>
                     </>
                 ) : (

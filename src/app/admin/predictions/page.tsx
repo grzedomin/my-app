@@ -25,7 +25,7 @@ export default function PredictionsManagement() {
     return (
         <div className="min-h-screen bg-gray-50">
             <nav className="bg-white shadow">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="max-w-[90%] mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex justify-between h-16">
                         <div className="flex items-center space-x-4">
                             <h1 className="text-xl font-bold">Predictions Management</h1>
@@ -52,8 +52,8 @@ export default function PredictionsManagement() {
                 </div>
             </nav>
 
-            <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-                <div className="px-4 py-6 sm:px-0">
+            <main className="max-w-[90%] mx-auto py-6 sm:px-4 lg:px-8">
+                <div className="px-2 py-6 sm:px-0">
                     <h2 className="text-2xl font-bold mb-6">Betting Predictions Management</h2>
 
                     <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
@@ -66,7 +66,7 @@ export default function PredictionsManagement() {
                     </div>
 
                     <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-                        <div className="px-4 py-5 sm:p-6">
+                        <div className="px-2 py-5 sm:p-6">
                             <BettingPredictionsTable />
                         </div>
                     </div>

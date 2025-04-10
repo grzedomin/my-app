@@ -40,7 +40,7 @@ const Navbar = () => {
                     {/* Logo */}
                     <div className="text-white font-bold text-xl">
                         <Link href="/">
-                            LOGO
+                            AI Set Match
                         </Link>
                     </div>
 

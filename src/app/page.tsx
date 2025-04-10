@@ -110,6 +110,78 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Subscription Plans */}
+      <section className="py-16 md:py-24 bg-gray-800">
+        <div className="container mx-auto px-4">
+          <div className="max-w-4xl mx-auto text-center mb-12">
+            <h2 className="text-3xl sm:text-4xl font-bold mb-6">Choose Your Winning Plan</h2>
+            <p className="text-lg sm:text-xl text-gray-300">
+              Subscribe to unlock our premium AI tennis predictions and gain the competitive edge you need to succeed.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+            {/* Monthly Subscription */}
+            <div className="bg-gray-900 rounded-xl overflow-hidden border border-gray-700 transition-transform duration-300 hover:transform hover:scale-105">
+              <div className="p-8">
+                <h3 className="text-2xl font-bold mb-2">Monthly Access</h3>
+                <div className="flex items-end mb-6">
+                  <span className="text-4xl font-bold">$29</span>
+                  <span className="text-gray-400 ml-1">/month</span>
+                </div>
+                <p className="text-gray-300 mb-6">Perfect for bettors who want to test our premium predictions with minimal commitment.</p>
+
+                <Link
+                  href="/subscription/monthly"
+                  className="block w-full bg-blue-600 py-3 rounded-md font-semibold text-center hover:bg-blue-700 transition duration-300"
+                  aria-label="Subscribe to monthly plan"
+                  tabIndex={0}
+                >
+                  Subscribe Now
+                </Link>
+              </div>
+              <div className="bg-gray-800 p-4 text-center text-sm text-gray-400">
+                Cancel anytime. No long-term commitment.
+              </div>
+            </div>
+
+            {/* Yearly Subscription */}
+            <div className="bg-gray-900 rounded-xl overflow-hidden border border-blue-500 transition-transform duration-300 hover:transform hover:scale-105 relative">
+              <div className="absolute top-0 right-0 bg-blue-600 text-xs font-bold px-3 py-1 uppercase tracking-wider">
+                Best Value
+              </div>
+              <div className="p-8">
+                <h3 className="text-2xl font-bold mb-2">Annual Access</h3>
+                <div className="flex items-end mb-6">
+                  <span className="text-4xl font-bold">$249</span>
+                  <span className="text-gray-400 ml-1">/year</span>
+                </div>
+                <p className="text-gray-300 mb-6">For serious bettors looking to maximize their edge with our most comprehensive package.</p>
+
+                <Link
+                  href="/subscription/yearly"
+                  className="block w-full bg-blue-600 py-3 rounded-md font-semibold text-center hover:bg-blue-700 transition duration-300"
+                  aria-label="Subscribe to yearly plan"
+                  tabIndex={0}
+                >
+                  Subscribe Now
+                </Link>
+              </div>
+              <div className="bg-gray-800 p-4 text-center text-sm text-gray-400">
+                <span className="text-blue-400 font-semibold">Save $99</span> compared to monthly billing
+              </div>
+            </div>
+          </div>
+
+          <div className="max-w-2xl mx-auto mt-12 text-center">
+            <p className="text-gray-400 text-sm">
+              All subscriptions include access to our AI prediction engine, daily match insights, and betting recommendations.
+              Your subscription helps us maintain and improve our prediction algorithms.
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* Footer */}
       <footer className="py-8 bg-gray-900 border-t border-gray-800">
         <div className="container mx-auto px-4 text-center">
