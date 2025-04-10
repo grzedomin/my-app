@@ -15,6 +15,7 @@ export interface FileData {
     size: number;
     isPublic?: boolean;
     fileDate?: string; // Date extracted from Excel file content
+    sportType?: string; // Tennis or Table Tennis
 }
 
 // Extract date from Excel file
@@ -125,7 +126,8 @@ export const fetchExcelFile = async (filePath: string): Promise<ArrayBuffer> => 
 export const uploadMultipleFiles = async (
     files: File[],
     userId: string,
-    path: string = "betting-files"
+    path: string = "betting-files",
+    sportType: string = "tennis" // Default to tennis
 ): Promise<FileData[]> => {
     const uploadedFiles: FileData[] = [];
 
@@ -135,7 +137,7 @@ export const uploadMultipleFiles = async (
             const fileDate = await extractDateFromExcel(file);
 
             // Upload file and get file data
-            const fileData = await uploadFile(file, userId, path, fileDate);
+            const fileData = await uploadFile(file, userId, path, fileDate, sportType);
             uploadedFiles.push(fileData);
         } catch (error) {
             console.error(`Error uploading file ${file.name}:`, error);
@@ -153,7 +155,8 @@ export const uploadFile = async (
     file: File,
     userId: string,
     path: string = "betting-files",
-    fileDate?: string | null
+    fileDate?: string | null,
+    sportType: string = "tennis" // Default to tennis
 ): Promise<FileData> => {
     try {
         // Create a unique filename
@@ -178,7 +181,8 @@ export const uploadFile = async (
                 userId: userId,
                 originalName: file.name,
                 accessLevel: "public", // Allow public access to this file
-                fileDate: fileDate || "" // Store the date in metadata
+                fileDate: fileDate || "", // Store the date in metadata
+                sportType: sportType // Store the sport type in metadata
             }
         };
 
@@ -201,7 +205,8 @@ export const uploadFile = async (
             userId,
             size: file.size,
             isPublic: true, // Mark all files as public by default
-            fileDate: fileDate || undefined
+            fileDate: fileDate || undefined,
+            sportType: sportType
         };
 
         // Save to Firestore
@@ -363,18 +368,29 @@ export const cleanupOrphanedFiles = async (userId: string): Promise<void> => {
 /**
  * Get files filtered by date
  */
-export const getFilesByDate = async (date: string): Promise<FileData[]> => {
+export const getFilesByDate = async (date: string, sportType?: string): Promise<FileData[]> => {
     try {
-        console.log("Getting files for date:", date);
+        console.log("Getting files for date:", date, "sport type:", sportType);
 
         try {
-            // First attempt with exact match + ordering
-            // This requires a composite index
-            const q = query(
-                collection(db, "files"),
-                where("fileDate", "==", date),
-                orderBy("uploadDate", "desc")
-            );
+            let q;
+
+            if (sportType) {
+                // Query with date and sport type
+                q = query(
+                    collection(db, "files"),
+                    where("fileDate", "==", date),
+                    where("sportType", "==", sportType),
+                    orderBy("uploadDate", "desc")
+                );
+            } else {
+                // Query with just date
+                q = query(
+                    collection(db, "files"),
+                    where("fileDate", "==", date),
+                    orderBy("uploadDate", "desc")
+                );
+            }
 
             const querySnapshot = await getDocs(q);
             const files: FileData[] = [];
@@ -389,10 +405,20 @@ export const getFilesByDate = async (date: string): Promise<FileData[]> => {
             console.warn("Index error, falling back to simpler query:", indexError);
 
             // Fallback without ordering (doesn't require composite index)
-            const fallbackQuery = query(
-                collection(db, "files"),
-                where("fileDate", "==", date)
-            );
+            let fallbackQuery;
+
+            if (sportType) {
+                fallbackQuery = query(
+                    collection(db, "files"),
+                    where("fileDate", "==", date),
+                    where("sportType", "==", sportType)
+                );
+            } else {
+                fallbackQuery = query(
+                    collection(db, "files"),
+                    where("fileDate", "==", date)
+                );
+            }
 
             const fallbackSnapshot = await getDocs(fallbackQuery);
             const fallbackFiles: FileData[] = [];
@@ -412,11 +438,80 @@ export const getFilesByDate = async (date: string): Promise<FileData[]> => {
             // Get all files and filter on client
             const allFiles = await getAllFiles();
             return allFiles
-                .filter(file => file.fileDate && file.fileDate.includes(date))
+                .filter(file => {
+                    // Filter by date
+                    const dateMatch = file.fileDate && file.fileDate.includes(date);
+
+                    // Filter by sport type if specified
+                    if (sportType) {
+                        return dateMatch && file.sportType === sportType;
+                    }
+
+                    return dateMatch;
+                })
                 .sort((a, b) => b.uploadDate - a.uploadDate);
         }
     } catch (error) {
         console.error("Error getting files by date:", error);
+        return [];
+    }
+};
+
+/**
+ * Get files filtered by sport type
+ */
+export const getFilesBySportType = async (sportType: string): Promise<FileData[]> => {
+    try {
+        console.log("Getting files for sport type:", sportType);
+
+        try {
+            // Query with sport type + ordering
+            const q = query(
+                collection(db, "files"),
+                where("sportType", "==", sportType),
+                orderBy("uploadDate", "desc")
+            );
+
+            const querySnapshot = await getDocs(q);
+            const files: FileData[] = [];
+
+            querySnapshot.forEach((doc) => {
+                const fileData = doc.data() as FileData;
+                files.push(fileData);
+            });
+
+            return files;
+        } catch (indexError) {
+            console.warn("Index error, falling back to simpler query:", indexError);
+
+            // Fallback without ordering (doesn't require composite index)
+            const fallbackQuery = query(
+                collection(db, "files"),
+                where("sportType", "==", sportType)
+            );
+
+            const fallbackSnapshot = await getDocs(fallbackQuery);
+            const fallbackFiles: FileData[] = [];
+
+            fallbackSnapshot.forEach((doc) => {
+                const fileData = doc.data() as FileData;
+                fallbackFiles.push(fileData);
+            });
+
+            // If fallback found results, return them
+            if (fallbackFiles.length > 0) {
+                // Sort client-side instead since we can't use orderBy
+                return fallbackFiles.sort((a, b) => b.uploadDate - a.uploadDate);
+            }
+
+            // If still no matches, filter all files client-side
+            const allFiles = await getAllFiles();
+            return allFiles
+                .filter(file => file.sportType === sportType)
+                .sort((a, b) => b.uploadDate - a.uploadDate);
+        }
+    } catch (error) {
+        console.error("Error getting files by sport type:", error);
         return [];
     }
 }; 

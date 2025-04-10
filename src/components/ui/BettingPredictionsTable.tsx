@@ -2,8 +2,9 @@ import React, { useState, useEffect } from "react";
 import { PieChart } from "react-minimal-pie-chart";
 import * as XLSX from "xlsx";
 import { useNotification } from "@/context/NotificationContext";
-import { getAllFiles, FileData, fetchExcelFile, getFilesByDate } from "@/lib/storage";
+import { getAllFiles, FileData, fetchExcelFile, getFilesByDate, getFilesBySportType } from "@/lib/storage";
 import AdminExcelPanel from "@/components/admin/AdminExcelPanel";
+import { useSearchParams } from "next/navigation";
 
 interface BettingPrediction {
     date: string;
@@ -43,14 +44,21 @@ const formatDateDisplay = (dateStr: string | undefined): string => {
 };
 
 const BettingPredictionsTable: React.FC = () => {
-
     const { showNotification } = useNotification();
+    const searchParams = useSearchParams();
+
     const [predictions, setPredictions] = useState<BettingPrediction[]>([]);
     const [filteredPredictions, setFilteredPredictions] = useState<BettingPrediction[]>([]);
     const [isUploading, setIsUploading] = useState(false);
     const [isLoadingFiles, setIsLoadingFiles] = useState(false);
     const [selectedDate, setSelectedDate] = useState<string>("");
     const [availableDates, setAvailableDates] = useState<string[]>([]);
+
+    // Get initial sport type from URL parameters or default to tennis
+    const [selectedSportType, setSelectedSportType] = useState<string>(() => {
+        const sportParam = searchParams.get("sport");
+        return sportParam || "tennis";
+    });
 
     // Effect to filter predictions by date
     useEffect(() => {
@@ -74,18 +82,23 @@ const BettingPredictionsTable: React.FC = () => {
         }
     }, [selectedDate, predictions]);
 
-    // Fetch saved files when component mounts
+    // Fetch saved files when component mounts or sport type changes
     useEffect(() => {
         fetchSavedFiles();
-    }, []);
+    }, [selectedSportType]);
 
     // Function to fetch saved files from database
     const fetchSavedFiles = async () => {
         try {
             setIsLoadingFiles(true);
 
-            // Get all files regardless of the user
-            const files = await getAllFiles();
+            // Get all files regardless of the user, filtered by sport type if selected
+            let files;
+            if (selectedSportType) {
+                files = await getFilesBySportType(selectedSportType);
+            } else {
+                files = await getAllFiles();
+            }
 
             // Extract unique dates from files
             const dates = files
@@ -136,8 +149,8 @@ const BettingPredictionsTable: React.FC = () => {
         setIsLoadingFiles(true);
 
         try {
-            // Get files for the selected date
-            const files = await getFilesByDate(date);
+            // Get files for the selected date and sport type
+            const files = await getFilesByDate(date, selectedSportType);
 
             if (files.length > 0) {
                 // Load the first file with this date
@@ -169,6 +182,29 @@ const BettingPredictionsTable: React.FC = () => {
         } finally {
             setIsLoadingFiles(false);
         }
+    };
+
+    // Function to handle sport type change
+    const handleSportTypeChange = (sportType: string) => {
+        if (isUploading || isLoadingFiles) return;
+
+        setSelectedSportType(sportType);
+
+        // Update URL with the new sport type
+        const params = new URLSearchParams(window.location.search);
+        if (sportType === "tennis") {
+            params.delete("sport");
+        } else {
+            params.set("sport", sportType);
+        }
+
+        // Update URL without reloading the page
+        const newUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
+        window.history.pushState({}, "", newUrl);
+
+        // Reset selected date when changing sport type
+        setSelectedDate("");
+        // The useEffect will trigger fetchSavedFiles
     };
 
     // Function to load file data from storage
@@ -207,8 +243,8 @@ const BettingPredictionsTable: React.FC = () => {
                         oddTeam2: parseFloat(row.Odd2?.toString() ?? "0"),
                         scorePrediction: row.Score_prediction ?? "",
                         confidence: parseFloat(row.Confidence?.toString() ?? "0"),
-                        bettingPredictionTeam1Win: parseFloat(row.Betting_predictions_team_1_win?.toString() ?? "0"),
-                        bettingPredictionTeam2Win: parseFloat(row.Betting_predictions_team_2_win?.toString() ?? "0"),
+                        bettingPredictionTeam1Win: parseFloat(row.Betting_predictions_team_1_Win?.toString() ?? "0"),
+                        bettingPredictionTeam2Win: parseFloat(row.Betting_predictions_team_2_Win?.toString() ?? "0"),
                         finalScore: row.Final_Score ?? ""
                     } as BettingPrediction;
                 });
@@ -256,7 +292,37 @@ const BettingPredictionsTable: React.FC = () => {
                 setIsUploading={setIsUploading}
                 isLoadingFiles={isLoadingFiles}
                 setIsLoadingFiles={setIsLoadingFiles}
+                selectedSportType={selectedSportType}
             />
+
+            {/* Sport Type Filter */}
+            <div className="mb-4 sm:mb-6">
+                <h3 className="block text-sm font-medium text-gray-300 mb-2">
+                    Sport Type
+                </h3>
+                <div className="flex space-x-2">
+                    <button
+                        onClick={() => handleSportTypeChange("tennis")}
+                        className={`px-4 py-2 rounded-md ${selectedSportType === "tennis"
+                            ? "bg-blue-600 text-white"
+                            : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                            }`}
+                        disabled={isLoadingFiles || isUploading}
+                    >
+                        Tennis
+                    </button>
+                    <button
+                        onClick={() => handleSportTypeChange("table-tennis")}
+                        className={`px-4 py-2 rounded-md ${selectedSportType === "table-tennis"
+                            ? "bg-blue-600 text-white"
+                            : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                            }`}
+                        disabled={isLoadingFiles || isUploading}
+                    >
+                        Table Tennis
+                    </button>
+                </div>
+            </div>
 
             {/* Date Filter */}
             {availableDates.length > 0 && (

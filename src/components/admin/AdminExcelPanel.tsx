@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useNotification } from "@/context/NotificationContext";
 import {
@@ -8,11 +8,13 @@ import {
     cleanupOrphanedFiles,
     fetchExcelFile,
     deleteFile,
-    getFilesByDate
+    getFilesByDate,
+    getFilesBySportType
 } from "@/lib/storage";
 import { FirebaseError } from "firebase/app";
 import * as XLSX from "xlsx";
 import AdminOnly from "@/components/AdminOnly";
+import { useSearchParams } from "next/navigation";
 
 interface BettingPrediction {
     date: string;
@@ -33,6 +35,7 @@ interface AdminExcelPanelProps {
     setIsUploading: (value: boolean) => void;
     isLoadingFiles: boolean;
     setIsLoadingFiles: (value: boolean) => void;
+    selectedSportType?: string;
 }
 
 interface ExcelRowData {
@@ -54,14 +57,56 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
     isUploading,
     setIsUploading,
     isLoadingFiles,
-    setIsLoadingFiles
+    setIsLoadingFiles,
+    selectedSportType: propSportType = "tennis"
 }) => {
     const { user } = useAuth();
     const { showNotification } = useNotification();
+    const searchParams = useSearchParams();
+
     const [uploadError, setUploadError] = useState("");
     const [availableFiles, setAvailableFiles] = useState<FileData[]>([]);
     const [selectedDate, setSelectedDate] = useState<string>("");
     const [availableDates, setAvailableDates] = useState<string[]>([]);
+
+    // Get sport type from URL params or use the prop value
+    const [selectedSportType, setSelectedSportType] = useState<string>(() => {
+        const sportParam = searchParams.get("sport");
+        return sportParam || propSportType;
+    });
+
+    // Handle sport type change
+    const handleSportTypeChange = (sportType: string) => {
+        if (isUploading || isLoadingFiles) return;
+
+        setSelectedSportType(sportType);
+
+        // Update URL with the new sport type
+        const params = new URLSearchParams(window.location.search);
+        if (sportType === "tennis") {
+            params.delete("sport");
+        } else {
+            params.set("sport", sportType);
+        }
+
+        // Update URL without reloading the page
+        const newUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
+        window.history.pushState({}, "", newUrl);
+
+        // Reset data when changing sport type
+        setSelectedDate("");
+        fetchSavedFiles(); // Will fetch files for the new sport type
+    };
+
+    // Update when propSportType changes
+    useEffect(() => {
+        if (propSportType !== selectedSportType) {
+            setSelectedSportType(propSportType);
+            // Reset data when sport type changes from parent
+            setSelectedDate("");
+            fetchSavedFiles();
+        }
+    }, [propSportType]);
 
     // Function to process Excel file - returns true if successful, false otherwise
     const processExcelFile = async (file: File): Promise<boolean> => {
@@ -201,7 +246,13 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
             }
 
             // Get all files regardless of the user
-            const files = await getAllFiles();
+            let files;
+            if (selectedSportType) {
+                files = await getFilesBySportType(selectedSportType);
+            } else {
+                files = await getAllFiles();
+            }
+
             setAvailableFiles(files);
 
             // Extract unique dates from files
@@ -284,8 +335,8 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
                 throw new Error("No valid Excel files to upload");
             }
 
-            // Upload all valid files
-            const uploadedFiles = await uploadMultipleFiles(validFiles, user.uid);
+            // Upload all valid files with the selected sport type
+            const uploadedFiles = await uploadMultipleFiles(validFiles, user.uid, "betting-files", selectedSportType);
 
             if (uploadedFiles.length > 0) {
                 showNotification(`Successfully uploaded ${uploadedFiles.length} file(s)`, "success");
@@ -353,8 +404,8 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
         setIsLoadingFiles(true);
 
         try {
-            // Get files for the selected date
-            const files = await getFilesByDate(date);
+            // Get files for the selected date and sport type
+            const files = await getFilesByDate(date, selectedSportType);
 
             if (files.length > 0) {
                 // Use the first file with this date and load it automatically
@@ -366,6 +417,8 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
                     file.fileDate && (
                         file.fileDate === date ||
                         file.fileDate.includes(date)
+                    ) && (
+                        !selectedSportType || file.sportType === selectedSportType
                     )
                 );
 
@@ -429,9 +482,39 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
                 {/* Upload Form */}
                 <form className="mb-6">
                     <div className="flex flex-col md:flex-row items-start gap-4">
-                        <div className="w-full md:w-auto">
+                        <div className="w-full">
+                            <div className="mb-4">
+                                <label htmlFor="sportType" className="block text-sm font-medium text-gray-300 mb-1">
+                                    Sport Type
+                                </label>
+                                <div className="flex flex-wrap gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSportTypeChange("tennis")}
+                                        className={`px-4 py-2 rounded-md ${selectedSportType === "tennis"
+                                            ? "bg-blue-600 text-white"
+                                            : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                                            }`}
+                                        disabled={isUploading || isLoadingFiles}
+                                    >
+                                        Upload Tennis File
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSportTypeChange("table-tennis")}
+                                        className={`px-4 py-2 rounded-md ${selectedSportType === "table-tennis"
+                                            ? "bg-blue-600 text-white"
+                                            : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                                            }`}
+                                        disabled={isUploading || isLoadingFiles}
+                                    >
+                                        Upload Table Tennis File
+                                    </button>
+                                </div>
+                            </div>
+
                             <label htmlFor="fileUpload" className="block text-sm font-medium text-gray-300 mb-1">
-                                Upload Excel File(s)
+                                Upload Excel File(s) for {selectedSportType === "tennis" ? "Tennis" : "Table Tennis"}
                             </label>
                             <input
                                 type="file"
