@@ -26,7 +26,7 @@ export default function Dashboard() {
     if (!user) return null;
 
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-gray-900 text-white">
             {/* Hero Header with Background Image */}
             <div
                 className="relative w-full h-80 sm:h-88 md:h-104 lg:h-[532px] bg-cover bg-center"
@@ -51,12 +51,12 @@ export default function Dashboard() {
 
             {/* Main Content */}
             <main className="max-w-[90%] mx-auto py-6 px-2 sm:py-8 sm:px-4 lg:px-8 mt-4 sm:mt-6">
-                <div className="bg-white rounded-lg shadow-xl p-4 sm:p-6">
+                <div className="bg-gray-800 rounded-lg shadow-xl p-4 sm:p-6 border border-gray-700">
                     <div className="mb-4 sm:mb-6">
-                        <h2 className="text-xl sm:text-2xl font-bold flex flex-col sm:flex-row sm:items-center gap-2">
+                        <h2 className="text-xl sm:text-2xl font-bold flex flex-col sm:flex-row sm:items-center gap-2 text-white">
                             Welcome to your Dashboard
                             <AdminOnly>
-                                <span className="inline-block text-sm bg-indigo-100 text-indigo-800 py-1 px-2 rounded-full">
+                                <span className="inline-block text-sm bg-blue-900 text-blue-100 py-1 px-2 rounded-full">
                                     Admin Access
                                 </span>
                             </AdminOnly>
@@ -64,8 +64,8 @@ export default function Dashboard() {
                     </div>
 
                     {/* User Info */}
-                    <div className="mb-4 sm:mb-6 text-gray-600">
-                        <p>Signed in as: <span className="font-medium">{user.email}</span></p>
+                    <div className="mb-4 sm:mb-6 text-gray-300">
+                        <p>Signed in as: <span className="font-medium text-blue-300">{user.email}</span></p>
                     </div>
 
                     {/* Betting Predictions Table */}

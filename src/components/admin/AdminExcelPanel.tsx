@@ -423,14 +423,14 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
 
     return (
         <AdminOnly>
-            <div className="mb-6 p-4 bg-white rounded-lg shadow-md">
-                <h2 className="text-lg font-semibold mb-4">Excel File Management</h2>
+            <div className="mb-6 p-4 bg-gray-800 rounded-lg shadow-md border border-gray-700">
+                <h2 className="text-lg font-semibold mb-4 text-white">Excel File Management</h2>
 
                 {/* Upload Form */}
                 <form className="mb-6">
                     <div className="flex flex-col md:flex-row items-start gap-4">
                         <div className="w-full md:w-auto">
-                            <label htmlFor="fileUpload" className="block text-sm font-medium text-gray-700 mb-1">
+                            <label htmlFor="fileUpload" className="block text-sm font-medium text-gray-300 mb-1">
                                 Upload Excel File(s)
                             </label>
                             <input
@@ -438,17 +438,17 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
                                 id="fileUpload"
                                 onChange={handleFileUpload}
                                 accept=".xlsx,.xls"
-                                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                                className="block w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-900 file:text-blue-100 hover:file:bg-blue-800"
                                 disabled={isUploading}
                                 multiple // Enable multiple file selection
                             />
-                            {uploadError && <p className="mt-1 text-sm text-red-600">{uploadError}</p>}
+                            {uploadError && <p className="mt-1 text-sm text-red-400">{uploadError}</p>}
                         </div>
 
                         <button
                             type="button"
                             onClick={() => fetchSavedFiles()}
-                            className={`px-4 py-2 rounded-md font-medium flex items-center mt-2 md:mt-6 ${isLoadingFiles ? "bg-blue-300" : "bg-blue-600 hover:bg-blue-700"} text-white`}
+                            className={`px-4 py-2 rounded-md font-medium flex items-center mt-2 md:mt-6 ${isLoadingFiles ? "bg-blue-700" : "bg-blue-600 hover:bg-blue-700"} text-white`}
                             disabled={isLoadingFiles}
                         >
                             {isLoadingFiles ? (
@@ -474,14 +474,14 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
                 {/* Date Filter */}
                 {availableDates.length > 0 && (
                     <div className="mb-6">
-                        <label htmlFor="dateFilter" className="block text-sm font-medium text-gray-700 mb-1">
+                        <label htmlFor="dateFilter" className="block text-sm font-medium text-gray-300 mb-1">
                             Filter by Date
                         </label>
                         <select
                             id="dateFilter"
                             value={selectedDate}
                             onChange={(e) => handleDateChange(e.target.value)}
-                            className="block w-full md:w-64 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                            className="block w-full md:w-64 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                             disabled={isLoadingFiles || isUploading}
                         >
                             <option value="">All Dates</option>
@@ -494,29 +494,29 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
 
                 {/* Available Files List */}
                 {availableFiles.length > 0 && (
-                    <div className="border rounded-md overflow-hidden">
-                        <h3 className="px-4 py-2 bg-gray-50 border-b font-medium">Available Files</h3>
-                        <ul className="divide-y divide-gray-200 max-h-64 overflow-y-auto">
+                    <div className="border border-gray-700 rounded-md overflow-hidden">
+                        <h3 className="px-4 py-2 bg-gray-900 border-b border-gray-700 font-medium text-gray-300">Available Files</h3>
+                        <ul className="divide-y divide-gray-700 max-h-64 overflow-y-auto">
                             {availableFiles
                                 .filter(file => !selectedDate || file.fileDate === selectedDate)
                                 .map((file) => (
-                                    <li key={file.id} className="px-4 py-3 hover:bg-gray-50 flex justify-between items-center">
+                                    <li key={file.id} className="px-4 py-3 hover:bg-gray-700 flex justify-between items-center bg-gray-800">
                                         <div>
-                                            <p className="font-medium text-sm text-gray-800">{file.fileName}</p>
-                                            {file.fileDate && <p className="text-xs text-gray-500">Date: {formatDateDisplay(file.fileDate)}</p>}
-                                            <p className="text-xs text-gray-500">Uploaded: {new Date(file.uploadDate).toLocaleString()}</p>
+                                            <p className="font-medium text-sm text-gray-200">{file.fileName}</p>
+                                            {file.fileDate && <p className="text-xs text-gray-400">Date: {formatDateDisplay(file.fileDate)}</p>}
+                                            <p className="text-xs text-gray-400">Uploaded: {new Date(file.uploadDate).toLocaleString()}</p>
                                         </div>
                                         <div className="flex space-x-2">
                                             <button
                                                 onClick={() => handleLoadFile(file)}
-                                                className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 transition-colors"
+                                                className="text-xs px-2 py-1 bg-blue-900 text-blue-100 rounded hover:bg-blue-800 transition-colors"
                                                 disabled={isUploading || isLoadingFiles}
                                             >
                                                 Load
                                             </button>
                                             <button
                                                 onClick={() => handleDeleteFile(file.id)}
-                                                className="text-xs px-2 py-1 bg-red-50 text-red-700 rounded hover:bg-red-100 transition-colors"
+                                                className="text-xs px-2 py-1 bg-red-900 text-red-100 rounded hover:bg-red-800 transition-colors"
                                                 disabled={isUploading || isLoadingFiles}
                                             >
                                                 Delete
