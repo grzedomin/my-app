@@ -67,6 +67,19 @@ const formatDateDisplay = (dateStr: string | undefined): string => {
     return dateMatch && dateMatch[1] ? dateMatch[1].trim() : dateStr;
 };
 
+// Helper function to extract time from a date string
+const extractTimeFromDate = (dateStr: string | undefined): string => {
+    if (!dateStr) return "";
+
+    // Try to extract time in format HH:MM EDT or similar
+    const timeMatch = dateStr.match(/(\d{2}:\d{2}(?:\s*[A-Z]{3,4})?)/);
+    if (timeMatch && timeMatch[1]) {
+        return timeMatch[1].trim();
+    }
+
+    return "";
+};
+
 // Helper function to extract set scores from score prediction format like "2:0(6:3, 6:3)"
 const extractSetScores = (scorePrediction: string): string => {
     const setScoreMatch = scorePrediction.match(/\(([^)]+)\)/);
@@ -366,7 +379,17 @@ const BettingPredictionsTable: React.FC = () => {
                     throw new Error("Excel file doesn't contain any data");
                 }
                 // Map the Excel data to our BettingPrediction interface
-                const mappedData = jsonData.map((row: ExcelRowData) => {
+                // Filter out rows that are just tournament headers (have no Team_1 or Team_2)
+                const validRows = jsonData.filter((row: ExcelRowData) => {
+                    // Skip rows that don't have both Team_1 and Team_2 (likely tournament headers)
+                    return row.Team_1 && row.Team_2;
+                });
+
+                if (validRows.length === 0) {
+                    throw new Error("Excel file doesn't contain any valid match data");
+                }
+
+                const mappedData = validRows.map((row: ExcelRowData) => {
                     return {
                         date: row.Date ?? "",
                         team1: row.Team_1 ?? "",
@@ -686,7 +709,10 @@ const BettingPredictionsTable: React.FC = () => {
                                                 className={`${index % 2 === 0 ? "bg-gray-700" : "bg-gray-800"} border-t border-gray-700`}
                                                 ref={isLastRow ? lastElementRef : null}
                                             >
-                                                <td className="py-3 px-4 text-center text-gray-300 w-[12%]">{formatDateDisplay(prediction.date)}</td>
+                                                <td className="py-3 px-4 text-center text-gray-300 w-[12%]">
+                                                    <div>{formatDateDisplay(prediction.date)}</div>
+                                                    <div className="text-xs text-gray-400 mt-1">{extractTimeFromDate(prediction.date)}</div>
+                                                </td>
                                                 <td className="py-3 px-4 text-center">
                                                     <div className="text-gray-200 font-semibold">{prediction.team1}</div>
                                                     <div className="text-xs text-gray-400 mt-1">{prediction.oddTeam1.toFixed(3)}</div>
@@ -811,7 +837,10 @@ const BettingPredictionsTable: React.FC = () => {
                                         ref={isLastCard ? lastElementRef : null}
                                     >
                                         <div className="mb-3 pb-2 border-b border-gray-700 flex justify-between">
-                                            <div className="text-sm text-gray-400 text-center">{formatDateDisplay(prediction.date)}</div>
+                                            <div className="text-sm text-gray-400 text-center">
+                                                <div>{formatDateDisplay(prediction.date)}</div>
+                                                <div className="text-xs text-gray-500 mt-1">{extractTimeFromDate(prediction.date)}</div>
+                                            </div>
                                             <div className="text-center">
                                                 <div className="text-sm font-medium text-blue-300">{cleanedScorePrediction}</div>
                                                 {predictionSetScores && (

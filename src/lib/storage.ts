@@ -21,6 +21,33 @@ export interface FileData {
 // Extract date from Excel file
 export const extractDateFromExcel = async (file: File): Promise<string | null> => {
     try {
+        // First, try to extract date from the filename (sportType-DD-MM-YYYY format)
+        const filenameMatch = file.name.match(/(?:tennis|table-tennis)-(\d{2})-(\d{2})-(\d{4})/i);
+
+        if (filenameMatch) {
+            const [, day, month, year] = filenameMatch;
+
+            // Convert month number to month name
+            const monthNames = [
+                "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+            ];
+
+            const monthIndex = parseInt(month, 10) - 1; // Convert to 0-based index
+            const monthName = monthNames[monthIndex];
+
+            // Add appropriate suffix to day
+            let daySuffix = "th";
+            if (day.endsWith("1") && day !== "11") daySuffix = "st";
+            if (day.endsWith("2") && day !== "12") daySuffix = "nd";
+            if (day.endsWith("3") && day !== "13") daySuffix = "rd";
+
+            // Format as "DDth MMM YYYY" (e.g., "12th Apr 2025")
+            const formattedDate = `${parseInt(day, 10)}${daySuffix} ${monthName} ${year}`;
+            return formattedDate;
+        }
+
+        // If filename doesn't match the pattern, fall back to extracting from file content
         return new Promise((resolve) => {
             const reader = new FileReader();
 
@@ -38,19 +65,29 @@ export const extractDateFromExcel = async (file: File): Promise<string | null> =
                     const worksheet = workbook.Sheets[firstSheetName];
                     const jsonData = XLSX.utils.sheet_to_json<{ Date?: string }>(worksheet);
 
-                    // Get date from the first row if available
-                    if (jsonData.length > 0 && jsonData[0].Date) {
-                        // Extract only the main date part (e.g., "8th Apr 2025") without time component
-                        const fullDate = jsonData[0].Date;
-                        // Match patterns like "3rd Apr 2025, 00:00 EDT" and extract "3rd Apr 2025"
-                        const dateMatch = fullDate.match(/(\d+[a-z]{2}\s+[A-Za-z]+\s+\d{4})/);
+                    // Look for rows with a valid Date field that includes both date and time
+                    // Start at index 1 to skip potential header rows
+                    for (let i = 1; i < jsonData.length; i++) {
+                        if (jsonData[i] && jsonData[i].Date) {
+                            const fullDate = jsonData[i].Date;
 
-                        if (dateMatch && dateMatch[1]) {
-                            resolve(dateMatch[1].trim());
-                        } else {
-                            // If pattern doesn't match, just use the full date
-                            resolve(fullDate);
+                            // Check if it has a time component
+                            if (fullDate && fullDate.includes(":")) {
+                                // Extract the date part for better matching while preserving time
+                                const dateMatch = fullDate.match(/(\d+[a-z]{2}\s+[A-Za-z]+\s+\d{4})/);
+                                if (dateMatch && dateMatch[1]) {
+                                    // Return the full date with time
+                                    resolve(fullDate);
+                                    return;
+                                }
+                            }
                         }
+                    }
+
+                    // If no row with time was found, fall back to the first row
+                    if (jsonData.length > 0 && jsonData[0].Date) {
+                        const firstDate = jsonData[0].Date;
+                        resolve(firstDate);
                     } else {
                         resolve(null);
                     }
