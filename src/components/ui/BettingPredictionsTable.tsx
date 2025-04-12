@@ -24,13 +24,13 @@ interface BettingPrediction {
 interface ExcelRowData {
     Date?: string;
     Team_1?: string;
-    Odd?: string | number;
+    Odd_1?: string | number;
     Team_2?: string;
-    Odd2?: string | number;
+    Odd_2?: string | number;
     Score_prediction?: string;
     Confidence?: string | number;
-    Betting_predictions_team_1_Win?: string | number;
-    Betting_predictions_team_2_Win?: string | number;
+    Betting_predictions_team_1_win?: string | number;
+    Betting_predictions_team_2_win?: string | number;
     Final_Score?: string;
     [key: string]: string | number | undefined;
 }
@@ -42,6 +42,34 @@ const formatDateDisplay = (dateStr: string | undefined): string => {
     // Extract main date part if it includes time
     const dateMatch = dateStr.match(/(\d+[a-z]{2}\s+[A-Za-z]+\s+\d{4})/);
     return dateMatch && dateMatch[1] ? dateMatch[1].trim() : dateStr;
+};
+
+// Helper function to extract set scores from score prediction format like "2:0(6:3, 6:3)"
+const extractSetScores = (scorePrediction: string): string => {
+    const setScoreMatch = scorePrediction.match(/\(([^)]+)\)/);
+    if (setScoreMatch && setScoreMatch[1]) {
+        return setScoreMatch[1];
+    }
+    return "";
+};
+
+// Helper function to clean score prediction by removing set details
+const cleanScorePrediction = (scorePrediction: string): string => {
+    return scorePrediction.replace(/\s*\([^)]+\)/, "").trim();
+};
+
+// Helper function to extract set scores from final score (similar pattern)
+const extractFinalSetScores = (finalScore: string): string => {
+    const setScoreMatch = finalScore.match(/\(([^)]+)\)/);
+    if (setScoreMatch && setScoreMatch[1]) {
+        return setScoreMatch[1];
+    }
+    return "";
+};
+
+// Helper function to clean final score by removing set details
+const cleanFinalScore = (finalScore: string): string => {
+    return finalScore.replace(/\s*\([^)]+\)/, "").trim();
 };
 
 const BettingPredictionsTable: React.FC = () => {
@@ -255,13 +283,13 @@ const BettingPredictionsTable: React.FC = () => {
                     return {
                         date: row.Date ?? "",
                         team1: row.Team_1 ?? "",
-                        oddTeam1: parseFloat(row.Odd?.toString() ?? "0"),
+                        oddTeam1: parseFloat(row.Odd_1?.toString() ?? "0"),
                         team2: row.Team_2 ?? "",
-                        oddTeam2: parseFloat(row.Odd2?.toString() ?? "0"),
+                        oddTeam2: parseFloat(row.Odd_2?.toString() ?? "0"),
                         scorePrediction: row.Score_prediction ?? "",
                         confidence: parseFloat(row.Confidence?.toString() ?? "0"),
-                        bettingPredictionTeam1Win: parseFloat(row.Betting_predictions_team_1_Win?.toString() ?? "0"),
-                        bettingPredictionTeam2Win: parseFloat(row.Betting_predictions_team_2_Win?.toString() ?? "0"),
+                        bettingPredictionTeam1Win: parseFloat(row.Betting_predictions_team_1_win?.toString() ?? "0"),
+                        bettingPredictionTeam2Win: parseFloat(row.Betting_predictions_team_2_win?.toString() ?? "0"),
                         finalScore: row.Final_Score ?? ""
                     } as BettingPrediction;
                 });
@@ -499,9 +527,7 @@ const BettingPredictionsTable: React.FC = () => {
                                     <tr>
                                         <th className="py-3 px-4 text-center font-bold text-gray-300 w-[12%]">Date</th>
                                         <th className="py-3 px-4 text-center font-bold text-gray-300">Team 1</th>
-                                        <th className="py-3 px-4 text-center font-bold text-gray-300 w-[8%]">Odd</th>
                                         <th className="py-3 px-4 text-center font-bold text-gray-300">Team 2</th>
-                                        <th className="py-3 px-4 text-center font-bold text-gray-300 w-[8%]">Odd</th>
                                         <th className="py-3 px-4 text-center font-bold text-gray-300 w-[15%]">Score Prediction</th>
                                         <th className="py-3 px-4 text-center font-bold text-gray-300">Confidence</th>
                                         <th className="py-3 px-4 text-center font-bold text-gray-300 w-[10%]">Team 1 Win</th>
@@ -513,11 +539,38 @@ const BettingPredictionsTable: React.FC = () => {
                                     {filteredPredictions.map((prediction, index) => {
                                         // Get API score if available
                                         const apiScore = getFinalScoreFromApi(prediction);
-                                        const displayScore = apiScore || prediction.finalScore || "";
 
-                                        // Get and format set scores if available
-                                        const setScores = getSetScoresFromApi(prediction);
-                                        const formattedSetScores = formatSetScores(setScores);
+                                        // Process final score
+                                        let displayScore = "";
+                                        let finalSetScores = "";
+
+                                        if (apiScore) {
+                                            // Use API score if available
+                                            displayScore = apiScore;
+                                            // Get and format set scores if available from API
+                                            const apiSetScores = getSetScoresFromApi(prediction);
+                                            finalSetScores = formatSetScores(apiSetScores).replace(' (', '').replace(')', '');
+                                        } else if (prediction.finalScore) {
+                                            // Extract final score parts if using data from excel
+                                            displayScore = cleanFinalScore(prediction.finalScore);
+                                            finalSetScores = extractFinalSetScores(prediction.finalScore);
+                                            // If no set scores are in parentheses but we can identify them
+                                            if (!finalSetScores && prediction.finalScore.includes(",")) {
+                                                // The entire finalScore might be just the set scores
+                                                finalSetScores = prediction.finalScore;
+                                                // If there's no main score, try to derive it
+                                                if (!displayScore || displayScore === finalSetScores) {
+                                                    // Try to generate a main score like "2:0" based on set scores
+                                                    displayScore = "";
+                                                }
+                                            }
+                                        }
+
+                                        // Extract set scores from prediction if available
+                                        const predictionSetScores = extractSetScores(prediction.scorePrediction);
+
+                                        // Clean the score prediction for display (remove set details)
+                                        const cleanedScorePrediction = cleanScorePrediction(prediction.scorePrediction);
 
                                         return (
                                             <tr
@@ -525,11 +578,20 @@ const BettingPredictionsTable: React.FC = () => {
                                                 className={`${index % 2 === 0 ? "bg-gray-700" : "bg-gray-800"} border-t border-gray-700`}
                                             >
                                                 <td className="py-3 px-4 text-center text-gray-300 w-[12%]">{formatDateDisplay(prediction.date)}</td>
-                                                <td className="py-3 px-4 text-center text-gray-200 font-semibold">{prediction.team1}</td>
-                                                <td className="py-3 px-4 text-center text-gray-300 w-[8%]">{prediction.oddTeam1.toFixed(3)}</td>
-                                                <td className="py-3 px-4 text-center text-gray-200 font-semibold">{prediction.team2}</td>
-                                                <td className="py-3 px-4 text-center text-gray-300 w-[8%]">{prediction.oddTeam2.toFixed(3)}</td>
-                                                <td className="py-3 px-4 text-center text-blue-300 font-bold w-[15%]">{prediction.scorePrediction}</td>
+                                                <td className="py-3 px-4 text-center">
+                                                    <div className="text-gray-200 font-semibold">{prediction.team1}</div>
+                                                    <div className="text-xs text-gray-400 mt-1">{prediction.oddTeam1.toFixed(3)}</div>
+                                                </td>
+                                                <td className="py-3 px-4 text-center">
+                                                    <div className="text-gray-200 font-semibold">{prediction.team2}</div>
+                                                    <div className="text-xs text-gray-400 mt-1">{prediction.oddTeam2.toFixed(3)}</div>
+                                                </td>
+                                                <td className="py-3 px-4 text-center w-[15%]">
+                                                    <div className="text-blue-300 font-bold">{cleanedScorePrediction}</div>
+                                                    {predictionSetScores && (
+                                                        <div className="text-xs text-blue-200 mt-1">{predictionSetScores}</div>
+                                                    )}
+                                                </td>
                                                 <td className="py-3 px-4 text-center">
                                                     {prediction.confidence > 0 ? (
                                                         <div className="flex items-center justify-center">
@@ -560,12 +622,10 @@ const BettingPredictionsTable: React.FC = () => {
                                                 <td className={`py-3 px-4 text-center text-gray-300 w-[10%]`}>
                                                     {prediction.bettingPredictionTeam2Win > 0 ? `${prediction.bettingPredictionTeam2Win}%` : ""}
                                                 </td>
-                                                <td className={`py-3 px-4 text-center font-bold w-[15%] ${getScoreClass(prediction, apiScore)}`}>
-                                                    {displayScore}
-                                                    {apiScore && (
-                                                        <>
-                                                            <span className="text-sm text-green-100">{formattedSetScores}</span>
-                                                        </>
+                                                <td className={`py-3 px-4 text-center w-[15%] ${getScoreClass(prediction, apiScore)}`}>
+                                                    <div className="font-bold">{displayScore}</div>
+                                                    {finalSetScores && (
+                                                        <div className="text-xs text-green-100 mt-1">{finalSetScores}</div>
                                                     )}
                                                 </td>
                                             </tr>
@@ -580,11 +640,38 @@ const BettingPredictionsTable: React.FC = () => {
                             {filteredPredictions.map((prediction, index) => {
                                 // Get API score if available
                                 const apiScore = getFinalScoreFromApi(prediction);
-                                const displayScore = apiScore || prediction.finalScore || "Pending";
 
-                                // Get and format set scores if available
-                                const setScores = getSetScoresFromApi(prediction);
-                                const formattedSetScores = formatSetScores(setScores);
+                                // Process final score
+                                let displayScore = "Pending";
+                                let finalSetScores = "";
+
+                                if (apiScore) {
+                                    // Use API score if available
+                                    displayScore = apiScore;
+                                    // Get and format set scores if available from API
+                                    const apiSetScores = getSetScoresFromApi(prediction);
+                                    finalSetScores = formatSetScores(apiSetScores).replace(' (', '').replace(')', '');
+                                } else if (prediction.finalScore) {
+                                    // Extract final score parts if using data from excel
+                                    displayScore = cleanFinalScore(prediction.finalScore);
+                                    finalSetScores = extractFinalSetScores(prediction.finalScore);
+                                    // If no set scores are in parentheses but we can identify them
+                                    if (!finalSetScores && prediction.finalScore.includes(",")) {
+                                        // The entire finalScore might be just the set scores
+                                        finalSetScores = prediction.finalScore;
+                                        // If there's no main score, try to derive it
+                                        if (!displayScore || displayScore === finalSetScores) {
+                                            // Try to generate a main score like "2:0" based on set scores
+                                            displayScore = "";
+                                        }
+                                    }
+                                }
+
+                                // Extract set scores from prediction if available
+                                const predictionSetScores = extractSetScores(prediction.scorePrediction);
+
+                                // Clean the score prediction for display (remove set details)
+                                const cleanedScorePrediction = cleanScorePrediction(prediction.scorePrediction);
 
                                 return (
                                     <div
@@ -600,14 +687,19 @@ const BettingPredictionsTable: React.FC = () => {
                                     >
                                         <div className="mb-3 pb-2 border-b border-gray-700 flex justify-between">
                                             <div className="text-sm text-gray-400 text-center">{formatDateDisplay(prediction.date)}</div>
-                                            <div className="text-sm font-medium text-blue-300 text-center">{prediction.scorePrediction}</div>
+                                            <div className="text-center">
+                                                <div className="text-sm font-medium text-blue-300">{cleanedScorePrediction}</div>
+                                                {predictionSetScores && (
+                                                    <div className="text-xs text-blue-200 mt-1">{predictionSetScores}</div>
+                                                )}
+                                            </div>
                                         </div>
 
                                         <div className="grid grid-cols-2 gap-3 mb-3">
                                             <div className="text-center">
                                                 <div className="text-sm text-gray-400">Team 1</div>
                                                 <div className="font-semibold text-gray-200">{prediction.team1}</div>
-                                                <div className="font-bold text-gray-300">{prediction.oddTeam1.toFixed(3)}</div>
+                                                <div className="text-xs text-gray-400 mt-1">{prediction.oddTeam1.toFixed(3)}</div>
                                                 <div className={`text-sm mt-1 ${prediction.bettingPredictionTeam1Win > prediction.bettingPredictionTeam2Win ? "text-blue-400 font-semibold" : "text-gray-400"}`}>
                                                     Win: {prediction.bettingPredictionTeam1Win}%
                                                 </div>
@@ -615,7 +707,7 @@ const BettingPredictionsTable: React.FC = () => {
                                             <div className="text-center">
                                                 <div className="text-sm text-gray-400">Team 2</div>
                                                 <div className="font-semibold text-gray-200">{prediction.team2}</div>
-                                                <div className="font-bold text-gray-300">{prediction.oddTeam2.toFixed(3)}</div>
+                                                <div className="text-xs text-gray-400 mt-1">{prediction.oddTeam2.toFixed(3)}</div>
                                                 <div className={`text-sm mt-1 ${prediction.bettingPredictionTeam2Win > prediction.bettingPredictionTeam1Win ? "text-blue-400 font-semibold" : "text-gray-400"}`}>
                                                     Win: {prediction.bettingPredictionTeam2Win}%
                                                 </div>
@@ -650,12 +742,10 @@ const BettingPredictionsTable: React.FC = () => {
                                                 <div className="text-sm text-gray-400">Final Score</div>
                                                 <div className="font-bold text-green-200">
                                                     {displayScore}
-                                                    {apiScore && (
-                                                        <>
-                                                            {formattedSetScores && <div className="text-sm text-green-100">{formattedSetScores}</div>}
-                                                        </>
-                                                    )}
                                                 </div>
+                                                {finalSetScores && (
+                                                    <div className="text-xs text-green-100">{finalSetScores}</div>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
