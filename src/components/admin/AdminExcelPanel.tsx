@@ -7,7 +7,6 @@ import {
     FileData,
     cleanupOrphanedFiles,
     fetchExcelFile,
-    deleteFile,
     getFilesByDate,
     getFilesBySportType
 } from "@/lib/storage";
@@ -138,8 +137,21 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
                         return;
                     }
 
+                    // Filter out rows that are just tournament headers
+                    const validRows = jsonData.filter((row: ExcelRowData) => {
+                        // Skip rows that don't have both Team_1 and Team_2 (likely tournament headers)
+                        return row.Team_1 && row.Team_2;
+                    });
+
+                    if (validRows.length === 0) {
+                        setUploadError("Excel file doesn't contain any valid match data");
+                        showNotification("No valid match data found in the Excel file", "error");
+                        resolve(false);
+                        return;
+                    }
+
                     // Map the Excel data
-                    const mappedData = jsonData.map((row: ExcelRowData) => {
+                    const mappedData = validRows.map((row: ExcelRowData) => {
                         return {
                             date: row.Date ?? "",
                             team1: row.Team_1 ?? "",
@@ -202,8 +214,18 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
                     throw new Error("Excel file doesn't contain any data");
                 }
 
+                // Filter out rows that are just tournament headers
+                const validRows = jsonData.filter((row: ExcelRowData) => {
+                    // Skip rows that don't have both Team_1 and Team_2 (likely tournament headers)
+                    return row.Team_1 && row.Team_2;
+                });
+
+                if (validRows.length === 0) {
+                    throw new Error("Excel file doesn't contain any valid match data");
+                }
+
                 // Map the Excel data
-                const mappedData = jsonData.map((row: ExcelRowData) => {
+                const mappedData = validRows.map((row: ExcelRowData) => {
                     return {
                         date: row.Date ?? "",
                         team1: row.Team_1 ?? "",
@@ -456,23 +478,7 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
         return dateMatch && dateMatch[1] ? dateMatch[1].trim() : dateStr;
     };
 
-    // Handle Delete file function
-    const handleDeleteFile = async (id: string) => {
-        if (!user) return;
 
-        try {
-            await deleteFile(id);
-            showNotification(`File deleted successfully`, "success");
-
-            // Refresh file list - this will automatically load the most recent file
-            await fetchSavedFiles();
-
-        } catch (error: unknown) {
-            console.error("Error deleting file:", error);
-            const errorMessage = error instanceof Error ? error.message : "Unknown error";
-            showNotification(`Failed to delete file: ${errorMessage}`, "error");
-        }
-    };
 
     return (
         <AdminOnly>
@@ -575,41 +581,7 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
                     </div>
                 )}
 
-                {/* Available Files List */}
-                {availableFiles.length > 0 && (
-                    <div className="border border-gray-700 rounded-md overflow-hidden">
-                        <h3 className="px-4 py-2 bg-gray-900 border-b border-gray-700 font-medium text-gray-300">Available Files</h3>
-                        <ul className="divide-y divide-gray-700 max-h-64 overflow-y-auto">
-                            {availableFiles
-                                .filter(file => !selectedDate || file.fileDate === selectedDate)
-                                .map((file) => (
-                                    <li key={file.id} className="px-4 py-3 hover:bg-gray-700 flex justify-between items-center bg-gray-800">
-                                        <div>
-                                            <p className="font-medium text-sm text-gray-200">{file.fileName}</p>
-                                            {file.fileDate && <p className="text-xs text-gray-400">Date: {formatDateDisplay(file.fileDate)}</p>}
-                                            <p className="text-xs text-gray-400">Uploaded: {new Date(file.uploadDate).toLocaleString()}</p>
-                                        </div>
-                                        <div className="flex space-x-2">
-                                            <button
-                                                onClick={() => handleLoadFile(file)}
-                                                className="text-xs px-2 py-1 bg-blue-900 text-blue-100 rounded hover:bg-blue-800 transition-colors"
-                                                disabled={isUploading || isLoadingFiles}
-                                            >
-                                                Load
-                                            </button>
-                                            <button
-                                                onClick={() => handleDeleteFile(file.id)}
-                                                className="text-xs px-2 py-1 bg-red-900 text-red-100 rounded hover:bg-red-800 transition-colors"
-                                                disabled={isUploading || isLoadingFiles}
-                                            >
-                                                Delete
-                                            </button>
-                                        </div>
-                                    </li>
-                                ))}
-                        </ul>
-                    </div>
-                )}
+
             </div>
         </AdminOnly>
     );
