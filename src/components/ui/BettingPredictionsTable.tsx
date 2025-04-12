@@ -7,6 +7,19 @@ import AdminExcelPanel from "@/components/admin/AdminExcelPanel";
 import { useSearchParams } from "next/navigation";
 import { useMatchesByDate } from "@/hooks/useMatchesByDate";
 
+// Spinner components for loading states
+const TableSpinner = () => (
+    <div className="flex justify-center items-center py-2">
+        <div className="animate-spin h-5 w-5 border-2 border-green-300 rounded-full border-t-transparent"></div>
+    </div>
+);
+
+const CardSpinner = () => (
+    <div className="flex justify-center items-center py-1">
+        <div className="animate-spin h-6 w-6 border-2 border-green-300 rounded-full border-t-transparent"></div>
+    </div>
+);
+
 interface BettingPrediction {
     date: string;
     team1: string;
@@ -623,9 +636,15 @@ const BettingPredictionsTable: React.FC = () => {
                                                     {prediction.bettingPredictionTeam2Win > 0 ? `${prediction.bettingPredictionTeam2Win}%` : ""}
                                                 </td>
                                                 <td className={`py-3 px-4 text-center w-[15%] ${getScoreClass(prediction, apiScore)}`}>
-                                                    <div className="font-bold">{displayScore}</div>
-                                                    {finalSetScores && (
-                                                        <div className="text-xs text-green-100 mt-1">{finalSetScores}</div>
+                                                    {!apiScore && !prediction.finalScore ? (
+                                                        <TableSpinner />
+                                                    ) : (
+                                                        <>
+                                                            <div className="font-bold">{displayScore}</div>
+                                                            {finalSetScores && (
+                                                                <div className="text-xs text-green-100 mt-1">{finalSetScores}</div>
+                                                            )}
+                                                        </>
                                                     )}
                                                 </td>
                                             </tr>
@@ -740,11 +759,19 @@ const BettingPredictionsTable: React.FC = () => {
                                             </div>
                                             <div className="text-center">
                                                 <div className="text-sm text-gray-400">Final Score</div>
-                                                <div className="font-bold text-green-200">
-                                                    {displayScore}
-                                                </div>
-                                                {finalSetScores && (
-                                                    <div className="text-xs text-green-100">{finalSetScores}</div>
+                                                {!apiScore && !prediction.finalScore ? (
+                                                    <div className="mt-1">
+                                                        <CardSpinner />
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <div className="font-bold text-green-200">
+                                                            {displayScore}
+                                                        </div>
+                                                        {finalSetScores && (
+                                                            <div className="text-xs text-green-100">{finalSetScores}</div>
+                                                        )}
+                                                    </>
                                                 )}
                                             </div>
                                         </div>
