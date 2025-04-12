@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { PieChart } from "react-minimal-pie-chart";
 import * as XLSX from "xlsx";
 import { useNotification } from "@/context/NotificationContext";
@@ -19,6 +19,16 @@ const CardSpinner = () => (
         <div className="animate-spin h-6 w-6 border-2 border-green-300 rounded-full border-t-transparent"></div>
     </div>
 );
+
+const LoadMoreSpinner = () => (
+    <div className="flex justify-center items-center py-4 mb-4">
+        <div className="animate-spin h-8 w-8 border-3 border-blue-400 rounded-full border-t-transparent"></div>
+        <span className="ml-3 text-blue-300 font-medium">Loading more data...</span>
+    </div>
+);
+
+// Number of items to load at once for lazy loading
+const ITEMS_PER_PAGE = 20;
 
 interface BettingPrediction {
     date: string;
@@ -88,13 +98,18 @@ const cleanFinalScore = (finalScore: string): string => {
 const BettingPredictionsTable: React.FC = () => {
     const { showNotification } = useNotification();
     const searchParams = useSearchParams();
+    const loaderRef = useRef<HTMLDivElement>(null);
 
     const [predictions, setPredictions] = useState<BettingPrediction[]>([]);
     const [filteredPredictions, setFilteredPredictions] = useState<BettingPrediction[]>([]);
+    const [displayedPredictions, setDisplayedPredictions] = useState<BettingPrediction[]>([]);
     const [isUploading, setIsUploading] = useState(false);
     const [isLoadingFiles, setIsLoadingFiles] = useState(false);
     const [selectedDate, setSelectedDate] = useState<string>("");
     const [availableDates, setAvailableDates] = useState<string[]>([]);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
+    const [hasMore, setHasMore] = useState(true);
+    const [pageNumber, setPageNumber] = useState(1);
 
     // Get initial sport type from URL parameters or default to tennis
     const [selectedSportType, setSelectedSportType] = useState<string>(() => {
@@ -138,7 +153,66 @@ const BettingPredictionsTable: React.FC = () => {
             });
             setFilteredPredictions(filtered);
         }
+
+        // Reset pagination when filters change
+        setPageNumber(1);
+        setHasMore(true);
     }, [selectedDate, predictions]);
+
+    // Effect to load initial page of data when filteredPredictions changes
+    useEffect(() => {
+        if (filteredPredictions.length > 0) {
+            // Only show first page initially
+            setDisplayedPredictions(filteredPredictions.slice(0, ITEMS_PER_PAGE));
+            setHasMore(filteredPredictions.length > ITEMS_PER_PAGE);
+        } else {
+            setDisplayedPredictions([]);
+            setHasMore(false);
+        }
+    }, [filteredPredictions]);
+
+    // Intersection observer for infinite loading
+    const observer = useRef<IntersectionObserver | null>(null);
+
+    const lastElementRef = useCallback((node: HTMLDivElement | null) => {
+        if (isLoadingMore) return;
+
+        if (observer.current) observer.current.disconnect();
+
+        observer.current = new IntersectionObserver(entries => {
+            if (entries[0].isIntersecting && hasMore) {
+                loadMoreData();
+            }
+        }, { threshold: 0.5 });
+
+        if (node) observer.current.observe(node);
+    }, [isLoadingMore, hasMore]);
+
+    // Function to load more data as user scrolls
+    const loadMoreData = useCallback(() => {
+        if (!hasMore || isLoadingMore) return;
+
+        setIsLoadingMore(true);
+
+        // Simulate loading delay for better UX
+        setTimeout(() => {
+            const nextPage = pageNumber + 1;
+            const startIndex = (nextPage - 1) * ITEMS_PER_PAGE;
+            const endIndex = nextPage * ITEMS_PER_PAGE;
+
+            const newItems = filteredPredictions.slice(startIndex, endIndex);
+
+            if (newItems.length > 0) {
+                setDisplayedPredictions(prev => [...prev, ...newItems]);
+                setPageNumber(nextPage);
+                setHasMore(endIndex < filteredPredictions.length);
+            } else {
+                setHasMore(false);
+            }
+
+            setIsLoadingMore(false);
+        }, 800);
+    }, [pageNumber, filteredPredictions, hasMore, isLoadingMore]);
 
     // Fetch saved files when component mounts or sport type changes
     useEffect(() => {
@@ -530,13 +604,31 @@ const BettingPredictionsTable: React.FC = () => {
                 </div>
             )}
 
+            {/* Data summary when we have a lot of data */}
+            {filteredPredictions.length > ITEMS_PER_PAGE && (
+                <div className="mb-4 p-3 bg-gray-700 rounded-lg text-gray-200 flex justify-between">
+                    <span>Showing {displayedPredictions.length} of {filteredPredictions.length} predictions</span>
+                    {!hasMore && displayedPredictions.length < filteredPredictions.length && (
+                        <button
+                            onClick={() => {
+                                setDisplayedPredictions(filteredPredictions);
+                                setHasMore(false);
+                            }}
+                            className="text-blue-300 hover:text-blue-400 underline"
+                        >
+                            Show all
+                        </button>
+                    )}
+                </div>
+            )}
+
             <div className="overflow-x-auto w-full">
-                {filteredPredictions && filteredPredictions.length > 0 ? (
+                {displayedPredictions && displayedPredictions.length > 0 ? (
                     <>
                         {/* Desktop Table - Hidden on small screens */}
                         <div className="hidden md:block w-full">
                             <table className="w-full bg-gray-800 border border-gray-700 shadow-md rounded-lg overflow-hidden">
-                                <thead className="bg-gray-900">
+                                <thead className="bg-gray-900 sticky top-0 z-10">
                                     <tr>
                                         <th className="py-3 px-4 text-center font-bold text-gray-300 w-[12%]">Date</th>
                                         <th className="py-3 px-4 text-center font-bold text-gray-300">Team 1</th>
@@ -549,7 +641,7 @@ const BettingPredictionsTable: React.FC = () => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {filteredPredictions.map((prediction, index) => {
+                                    {displayedPredictions.map((prediction, index) => {
                                         // Get API score if available
                                         const apiScore = getFinalScoreFromApi(prediction);
 
@@ -585,10 +677,14 @@ const BettingPredictionsTable: React.FC = () => {
                                         // Clean the score prediction for display (remove set details)
                                         const cleanedScorePrediction = cleanScorePrediction(prediction.scorePrediction);
 
+                                        // Check if this is the last row for ref attachment
+                                        const isLastRow = index === displayedPredictions.length - 1 && hasMore;
+
                                         return (
                                             <tr
                                                 key={index}
                                                 className={`${index % 2 === 0 ? "bg-gray-700" : "bg-gray-800"} border-t border-gray-700`}
+                                                ref={isLastRow ? lastElementRef : null}
                                             >
                                                 <td className="py-3 px-4 text-center text-gray-300 w-[12%]">{formatDateDisplay(prediction.date)}</td>
                                                 <td className="py-3 px-4 text-center">
@@ -652,11 +748,17 @@ const BettingPredictionsTable: React.FC = () => {
                                     })}
                                 </tbody>
                             </table>
+                            {/* Loading indicator for desktop view */}
+                            {isLoadingMore && hasMore && (
+                                <div className="mt-2">
+                                    <LoadMoreSpinner />
+                                </div>
+                            )}
                         </div>
 
                         {/* Mobile & Tablet Card View - Only visible on small screens */}
                         <div className="md:hidden px-0 sm:px-0 w-full">
-                            {filteredPredictions.map((prediction, index) => {
+                            {displayedPredictions.map((prediction, index) => {
                                 // Get API score if available
                                 const apiScore = getFinalScoreFromApi(prediction);
 
@@ -692,6 +794,9 @@ const BettingPredictionsTable: React.FC = () => {
                                 // Clean the score prediction for display (remove set details)
                                 const cleanedScorePrediction = cleanScorePrediction(prediction.scorePrediction);
 
+                                // Check if this is the last card for ref attachment
+                                const isLastCard = index === displayedPredictions.length - 1 && hasMore;
+
                                 return (
                                     <div
                                         key={index}
@@ -703,6 +808,7 @@ const BettingPredictionsTable: React.FC = () => {
                                                 "border-green-600 bg-green-700" :
                                                 "border-green-700 bg-green-900")
                                             }`}
+                                        ref={isLastCard ? lastElementRef : null}
                                     >
                                         <div className="mb-3 pb-2 border-b border-gray-700 flex justify-between">
                                             <div className="text-sm text-gray-400 text-center">{formatDateDisplay(prediction.date)}</div>
@@ -778,6 +884,12 @@ const BettingPredictionsTable: React.FC = () => {
                                     </div>
                                 );
                             })}
+                            {/* Loading indicator for mobile view */}
+                            {isLoadingMore && hasMore && (
+                                <div className="mt-1 mb-2">
+                                    <LoadMoreSpinner />
+                                </div>
+                            )}
                         </div>
                     </>
                 ) : (
@@ -794,6 +906,22 @@ const BettingPredictionsTable: React.FC = () => {
                     </div>
                 )}
             </div>
+
+            {/* Load more button (as an alternative to scroll-based loading) */}
+            {hasMore && filteredPredictions.length > displayedPredictions.length && !isLoadingMore && (
+                <div className="flex justify-center mt-4 mb-4">
+                    <button
+                        onClick={loadMoreData}
+                        className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors"
+                        disabled={isLoadingMore}
+                    >
+                        Load More Predictions
+                    </button>
+                </div>
+            )}
+
+            {/* Invisible reference element for intersection observer */}
+            <div ref={loaderRef} className="h-4" />
         </div>
     );
 };
