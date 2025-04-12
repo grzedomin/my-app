@@ -5,6 +5,7 @@ import { useNotification } from "@/context/NotificationContext";
 import { getAllFiles, FileData, fetchExcelFile, getFilesByDate, getFilesBySportType } from "@/lib/storage";
 import AdminExcelPanel from "@/components/admin/AdminExcelPanel";
 import { useSearchParams } from "next/navigation";
+import { useMatchesByDate } from "@/hooks/useMatchesByDate";
 
 interface BettingPrediction {
     date: string;
@@ -59,6 +60,22 @@ const BettingPredictionsTable: React.FC = () => {
         const sportParam = searchParams.get("sport");
         return sportParam || "tennis";
     });
+
+    // Use our custom hook to fetch matches by date
+    const {
+        error: matchesError,
+        apiPlayerNames,
+        apiMatchScores,
+        apiMatchSetScores,
+        findBestPlayerMatch
+    } = useMatchesByDate(selectedDate, predictions);
+
+    // Show error message when fetching matches fails
+    useEffect(() => {
+        if (matchesError) {
+            showNotification(matchesError, "error");
+        }
+    }, [matchesError, showNotification]);
 
     // Effect to filter predictions by date
     useEffect(() => {
@@ -248,7 +265,6 @@ const BettingPredictionsTable: React.FC = () => {
                         finalScore: row.Final_Score ?? ""
                     } as BettingPrediction;
                 });
-                console.log(mappedData);
                 setPredictions(mappedData);
                 setIsUploading(false);
             } catch (error) {
@@ -265,22 +281,150 @@ const BettingPredictionsTable: React.FC = () => {
         }
     };
 
-    // Function to check if the bet was successful
+    // Function to check if a bet was successful based on the final score
     const isBetSuccessful = (prediction: BettingPrediction): boolean => {
-        if (!prediction.finalScore) return false;
+        if (!prediction.finalScore || !prediction.scorePrediction) return false;
 
-        // Get the first number from the score prediction (team1 wins)
-        const predictedTeam1Wins = parseInt(prediction.scorePrediction.split(":")[0]);
-        // Get the first number from the final score (team1 actual wins)
-        const actualTeam1Wins = parseInt(prediction.finalScore.split(":")[0]);
-
-        // If team1 was predicted to win (score starts with 2) and actually won
-        // or team2 was predicted to win (score starts with 0 or 1) and actually won
-        if (predictedTeam1Wins === 2) {
-            return actualTeam1Wins === 2;
-        } else {
-            return actualTeam1Wins < 2;
+        // For tennis: compare who won rather than exact score
+        if (selectedSportType === "tennis" || selectedSportType === "table-tennis") {
+            return compareTennisScores(prediction.scorePrediction, prediction.finalScore);
         }
+
+        // Default case: exact match of scores
+        return prediction.scorePrediction === prediction.finalScore;
+    };
+
+    // Helper function to compare tennis scores by checking winner
+    const compareTennisScores = (predictionScore: string, actualScore: string): boolean => {
+        if (!predictionScore || !actualScore) return false;
+
+        try {
+            // Parse scores - assuming format like "2:0" or "1:2"
+            const [predTeam1Sets, predTeam2Sets] = predictionScore.split(":").map(Number);
+            const [actualTeam1Sets, actualTeam2Sets] = actualScore.split(":").map(Number);
+
+            if (isNaN(predTeam1Sets) || isNaN(predTeam2Sets) ||
+                isNaN(actualTeam1Sets) || isNaN(actualTeam2Sets)) {
+                return false;
+            }
+
+            // Prediction is correct if it correctly identified the winner
+            const predWinner = predTeam1Sets > predTeam2Sets ? 1 : 2;
+            const actualWinner = actualTeam1Sets > actualTeam2Sets ? 1 : 2;
+
+            return predWinner === actualWinner;
+        } catch (err) {
+            console.error("Error comparing scores:", err);
+            return false;
+        }
+    };
+
+    // Function to get the final score from API match data if available
+    const getFinalScoreFromApi = (prediction: BettingPrediction): string | null => {
+        if (!prediction.team1 || !prediction.team2 || !findBestPlayerMatch) return null;
+
+        // Try to match with fuzzy matching first if we have API player names
+        if (apiPlayerNames.length > 0) {
+            // Try to match using findBestPlayerMatch from our hook
+            const mappedTeam1 = findBestPlayerMatch(prediction.team1);
+            const mappedTeam2 = findBestPlayerMatch(prediction.team2);
+
+            // Create lookup key with the matched names
+            const key = `${mappedTeam1.toLowerCase().trim()}-${mappedTeam2.toLowerCase().trim()}`;
+            if (apiMatchScores.has(key)) {
+                return apiMatchScores.get(key) || null;
+            }
+
+            // Try reversed order
+            const keyReversed = `${mappedTeam2.toLowerCase().trim()}-${mappedTeam1.toLowerCase().trim()}`;
+            if (apiMatchScores.has(keyReversed)) {
+                // Get the reversed score and swap it back
+                const reversedScore = apiMatchScores.get(keyReversed);
+                if (reversedScore) {
+                    const [score1, score2] = reversedScore.split(":");
+                    return `${score2}:${score1}`;
+                }
+            }
+        }
+
+        // Fall back to exact name matching if fuzzy matching didn't work
+        const key = `${prediction.team1.toLowerCase().trim().replace(/\s+/g, " ")}-${prediction.team2.toLowerCase().trim().replace(/\s+/g, " ")}`;
+
+        // Check if we have a match in our apiMatchScores map
+        if (apiMatchScores.has(key)) {
+            return apiMatchScores.get(key) || null;
+        }
+
+        // No match found in API data
+        return null;
+    };
+
+    // Function to get set scores from API match data if available
+    const getSetScoresFromApi = (prediction: BettingPrediction): { homeTeam: { set1: number; set2: number; }; awayTeam: { set1: number; set2: number; } } | null => {
+        if (!prediction.team1 || !prediction.team2 || !findBestPlayerMatch || !apiMatchSetScores) return null;
+
+        // Try to match with fuzzy matching first
+        if (apiPlayerNames.length > 0) {
+            // Try to match using findBestPlayerMatch from our hook
+            const mappedTeam1 = findBestPlayerMatch(prediction.team1);
+            const mappedTeam2 = findBestPlayerMatch(prediction.team2);
+
+            // Create lookup key with the matched names
+            const key = `${mappedTeam1.toLowerCase().trim()}-${mappedTeam2.toLowerCase().trim()}`;
+            if (apiMatchSetScores.has(key)) {
+                return apiMatchSetScores.get(key) || null;
+            }
+
+            // Try reversed order
+            const keyReversed = `${mappedTeam2.toLowerCase().trim()}-${mappedTeam1.toLowerCase().trim()}`;
+            if (apiMatchSetScores.has(keyReversed)) {
+                return apiMatchSetScores.get(keyReversed) || null;
+            }
+        }
+
+        // Fall back to exact name matching
+        const key = `${prediction.team1.toLowerCase().trim().replace(/\s+/g, " ")}-${prediction.team2.toLowerCase().trim().replace(/\s+/g, " ")}`;
+
+        // Check if we have a match in our apiMatchSetScores map
+        if (apiMatchSetScores.has(key)) {
+            return apiMatchSetScores.get(key) || null;
+        }
+
+        // No match found in API data
+        return null;
+    };
+
+    // Function to format set scores for display: (6:2, 10:3)
+    const formatSetScores = (setScores: { homeTeam: { set1: number; set2: number; }; awayTeam: { set1: number; set2: number; } } | null): string => {
+        if (!setScores) return "";
+
+        const set1 = `${setScores.homeTeam.set1}:${setScores.awayTeam.set1}`;
+        const set2 = `${setScores.homeTeam.set2}:${setScores.awayTeam.set2}`;
+
+        // Only display sets that have actual scores
+        const sets: string[] = [];
+        if (setScores.homeTeam.set1 > 0 || setScores.awayTeam.set1 > 0) {
+            sets.push(set1);
+        }
+        if (setScores.homeTeam.set2 > 0 || setScores.awayTeam.set2 > 0) {
+            sets.push(set2);
+        }
+
+        return sets.length > 0 ? ` (${sets.join(", ")})` : "";
+    };
+
+    // Function to determine score class based on source and correctness
+    const getScoreClass = (prediction: BettingPrediction, apiScore: string | null): string => {
+        // If no API score, use existing logic for prediction's finalScore
+        if (!apiScore) {
+            return prediction.finalScore && isBetSuccessful(prediction)
+                ? "bg-green-700 text-green-100"
+                : "bg-green-900 text-green-100";
+        }
+
+        // Compare API score with prediction
+        const isCorrect = compareTennisScores(prediction.scorePrediction, apiScore);
+        return isCorrect ? "bg-green-600 text-green-100" : "bg-green-800 text-green-100";
     };
 
     return (
@@ -367,7 +511,14 @@ const BettingPredictionsTable: React.FC = () => {
                                 </thead>
                                 <tbody>
                                     {filteredPredictions.map((prediction, index) => {
-                                        console.log(prediction, 11);
+                                        // Get API score if available
+                                        const apiScore = getFinalScoreFromApi(prediction);
+                                        const displayScore = apiScore || prediction.finalScore || "";
+
+                                        // Get and format set scores if available
+                                        const setScores = getSetScoresFromApi(prediction);
+                                        const formattedSetScores = formatSetScores(setScores);
+
                                         return (
                                             <tr
                                                 key={index}
@@ -409,9 +560,13 @@ const BettingPredictionsTable: React.FC = () => {
                                                 <td className={`py-3 px-4 text-center text-gray-300 w-[10%]`}>
                                                     {prediction.bettingPredictionTeam2Win > 0 ? `${prediction.bettingPredictionTeam2Win}%` : ""}
                                                 </td>
-                                                <td className={`py-3 px-4 text-center font-bold w-[15%] ${prediction.finalScore && isBetSuccessful(prediction) ? "bg-green-900 text-green-100" : "text-gray-300"
-                                                    }`}>
-                                                    {prediction.finalScore}
+                                                <td className={`py-3 px-4 text-center font-bold w-[15%] ${getScoreClass(prediction, apiScore)}`}>
+                                                    {displayScore}
+                                                    {apiScore && (
+                                                        <>
+                                                            <span className="text-sm text-green-100">{formattedSetScores}</span>
+                                                        </>
+                                                    )}
                                                 </td>
                                             </tr>
                                         );
@@ -422,66 +577,90 @@ const BettingPredictionsTable: React.FC = () => {
 
                         {/* Mobile & Tablet Card View - Only visible on small screens */}
                         <div className="md:hidden px-0 sm:px-0 w-full">
-                            {filteredPredictions.map((prediction, index) => (
-                                <div
-                                    key={index}
-                                    className={`mb-4 p-4 rounded-lg border ${prediction.finalScore && isBetSuccessful(prediction) ? "border-green-700 bg-green-900" : "border-gray-700 bg-gray-800"}`}
-                                >
-                                    <div className="mb-3 pb-2 border-b border-gray-700 flex justify-between">
-                                        <div className="text-sm text-gray-400 text-center">{formatDateDisplay(prediction.date)}</div>
-                                        <div className="text-sm font-medium text-blue-300 text-center">{prediction.scorePrediction}</div>
-                                    </div>
+                            {filteredPredictions.map((prediction, index) => {
+                                // Get API score if available
+                                const apiScore = getFinalScoreFromApi(prediction);
+                                const displayScore = apiScore || prediction.finalScore || "Pending";
 
-                                    <div className="grid grid-cols-2 gap-3 mb-3">
-                                        <div className="text-center">
-                                            <div className="text-sm text-gray-400">Team 1</div>
-                                            <div className="font-semibold text-gray-200">{prediction.team1}</div>
-                                            <div className="font-bold text-gray-300">{prediction.oddTeam1.toFixed(3)}</div>
-                                            <div className={`text-sm mt-1 ${prediction.bettingPredictionTeam1Win > prediction.bettingPredictionTeam2Win ? "text-blue-400 font-semibold" : "text-gray-400"}`}>
-                                                Win: {prediction.bettingPredictionTeam1Win}%
-                                            </div>
-                                        </div>
-                                        <div className="text-center">
-                                            <div className="text-sm text-gray-400">Team 2</div>
-                                            <div className="font-semibold text-gray-200">{prediction.team2}</div>
-                                            <div className="font-bold text-gray-300">{prediction.oddTeam2.toFixed(3)}</div>
-                                            <div className={`text-sm mt-1 ${prediction.bettingPredictionTeam2Win > prediction.bettingPredictionTeam1Win ? "text-blue-400 font-semibold" : "text-gray-400"}`}>
-                                                Win: {prediction.bettingPredictionTeam2Win}%
-                                            </div>
-                                        </div>
-                                    </div>
+                                // Get and format set scores if available
+                                const setScores = getSetScoresFromApi(prediction);
+                                const formattedSetScores = formatSetScores(setScores);
 
-                                    <div className="flex justify-between items-center mt-3 pt-2 border-t border-gray-700">
-                                        <div className="text-center">
-                                            <div className="text-sm text-gray-400">Confidence</div>
-                                            <div className="flex items-center justify-center">
-                                                <div className="w-6 h-6 mr-2">
-                                                    <PieChart
-                                                        data={[
-                                                            { value: isNaN(prediction.confidence) ? 0 : prediction.confidence, color: !isNaN(prediction.confidence) && prediction.confidence > 70 ? "#4ade80" : !isNaN(prediction.confidence) && prediction.confidence < 50 ? "#f87171" : "#fdba74" }
-                                                        ]}
-                                                        totalValue={100}
-                                                        lineWidth={20}
-                                                        background="#374151"
-                                                        rounded
-                                                        animate
-                                                    />
+                                return (
+                                    <div
+                                        key={index}
+                                        className={`mb-4 p-4 rounded-lg border ${apiScore ?
+                                            (compareTennisScores(prediction.scorePrediction, apiScore) ?
+                                                "border-green-600 bg-green-700" :
+                                                "border-green-700 bg-green-800") :
+                                            (prediction.finalScore && isBetSuccessful(prediction) ?
+                                                "border-green-600 bg-green-700" :
+                                                "border-green-700 bg-green-900")
+                                            }`}
+                                    >
+                                        <div className="mb-3 pb-2 border-b border-gray-700 flex justify-between">
+                                            <div className="text-sm text-gray-400 text-center">{formatDateDisplay(prediction.date)}</div>
+                                            <div className="text-sm font-medium text-blue-300 text-center">{prediction.scorePrediction}</div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-3 mb-3">
+                                            <div className="text-center">
+                                                <div className="text-sm text-gray-400">Team 1</div>
+                                                <div className="font-semibold text-gray-200">{prediction.team1}</div>
+                                                <div className="font-bold text-gray-300">{prediction.oddTeam1.toFixed(3)}</div>
+                                                <div className={`text-sm mt-1 ${prediction.bettingPredictionTeam1Win > prediction.bettingPredictionTeam2Win ? "text-blue-400 font-semibold" : "text-gray-400"}`}>
+                                                    Win: {prediction.bettingPredictionTeam1Win}%
                                                 </div>
-                                                <span className={`font-bold text-sm ${!isNaN(prediction.confidence) && prediction.confidence > 70 ? "text-green-400" :
-                                                    !isNaN(prediction.confidence) && prediction.confidence < 50 ? "text-red-400" :
-                                                        "text-amber-400"
-                                                    }`}>
-                                                    {isNaN(prediction.confidence) ? "0.00" : prediction.confidence.toFixed(2)}%
-                                                </span>
+                                            </div>
+                                            <div className="text-center">
+                                                <div className="text-sm text-gray-400">Team 2</div>
+                                                <div className="font-semibold text-gray-200">{prediction.team2}</div>
+                                                <div className="font-bold text-gray-300">{prediction.oddTeam2.toFixed(3)}</div>
+                                                <div className={`text-sm mt-1 ${prediction.bettingPredictionTeam2Win > prediction.bettingPredictionTeam1Win ? "text-blue-400 font-semibold" : "text-gray-400"}`}>
+                                                    Win: {prediction.bettingPredictionTeam2Win}%
+                                                </div>
                                             </div>
                                         </div>
-                                        <div className="text-center">
-                                            <div className="text-sm text-gray-400">Final Score</div>
-                                            <div className="font-bold text-gray-200">{prediction.finalScore || "Pending"}</div>
+
+                                        <div className="flex justify-between items-center mt-3 pt-2 border-t border-gray-700">
+                                            <div className="text-center">
+                                                <div className="text-sm text-gray-400">Confidence</div>
+                                                <div className="flex items-center justify-center">
+                                                    <div className="w-6 h-6 mr-2">
+                                                        <PieChart
+                                                            data={[
+                                                                { value: isNaN(prediction.confidence) ? 0 : prediction.confidence, color: !isNaN(prediction.confidence) && prediction.confidence > 70 ? "#4ade80" : !isNaN(prediction.confidence) && prediction.confidence < 50 ? "#f87171" : "#fdba74" }
+                                                            ]}
+                                                            totalValue={100}
+                                                            lineWidth={20}
+                                                            background="#374151"
+                                                            rounded
+                                                            animate
+                                                        />
+                                                    </div>
+                                                    <span className={`font-bold text-sm ${!isNaN(prediction.confidence) && prediction.confidence > 70 ? "text-green-400" :
+                                                        !isNaN(prediction.confidence) && prediction.confidence < 50 ? "text-red-400" :
+                                                            "text-amber-400"
+                                                        }`}>
+                                                        {isNaN(prediction.confidence) ? "0.00" : prediction.confidence.toFixed(2)}%
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div className="text-center">
+                                                <div className="text-sm text-gray-400">Final Score</div>
+                                                <div className="font-bold text-green-200">
+                                                    {displayScore}
+                                                    {apiScore && (
+                                                        <>
+                                                            {formattedSetScores && <div className="text-sm text-green-100">{formattedSetScores}</div>}
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </>
                 ) : (
