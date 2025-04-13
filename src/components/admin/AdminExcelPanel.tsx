@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useNotification } from "@/context/NotificationContext";
 import {
@@ -63,11 +63,17 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
     const { user } = useAuth();
     const { showNotification } = useNotification();
     const searchParams = useSearchParams();
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [uploadError, setUploadError] = useState("");
     const [availableFiles, setAvailableFiles] = useState<FileData[]>([]);
     const [selectedDate, setSelectedDate] = useState<string>("");
     const [availableDates, setAvailableDates] = useState<string[]>([]);
+    const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
+
+    // Confirmation modal state
+    const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+    const [fileToDelete, setFileToDelete] = useState<{ id: string, name: string } | null>(null);
 
     // Get sport type from URL params or use the prop value
     const [selectedSportType, setSelectedSportType] = useState<string>(() => {
@@ -312,12 +318,62 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
         }
     };
 
-    // Function to handle file upload (updated for multiple files)
-    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Function to handle file selection
+    const handleFileSelection = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
-        if (!files || !files.length || !user) {
+        if (!files || !files.length) {
+            return;
+        }
+
+        setSelectedFiles(files);
+        setUploadError("");
+    };
+
+    // Function to clear selected files
+    const clearSelectedFiles = () => {
+        setSelectedFiles(null);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = "";
+        }
+    };
+
+    // Function to check if file name follows the required format
+    const isValidFileNameFormat = (fileName: string, sportType: string): boolean => {
+        // Extract file name without extension
+        const fileNameWithoutExt = fileName.split(".")[0];
+
+        // Define the expected format based on sport type
+        const datePattern = "\\d{2}-\\d{2}-\\d{4}"; // Format: DD-MM-YYYY
+        const tennisPattern = new RegExp(`^tennis-${datePattern}$`);
+        const tableTennisPattern = new RegExp(`^table-tennis-${datePattern}$`);
+
+        if (sportType === "tennis") {
+            return tennisPattern.test(fileNameWithoutExt);
+        } else if (sportType === "table-tennis") {
+            return tableTennisPattern.test(fileNameWithoutExt);
+        }
+
+        return false;
+    };
+
+    // Function to suggest a valid file name based on current date
+    const suggestValidFileName = (sportType: string): string => {
+        const today = new Date();
+        const day = String(today.getDate()).padStart(2, "0");
+        const month = String(today.getMonth() + 1).padStart(2, "0");
+        const year = today.getFullYear();
+
+        const formattedDate = `${day}-${month}-${year}`;
+        return `${sportType}-${formattedDate}.xlsx`;
+    };
+
+    // Function to handle file upload
+    const handleUploadSelectedFiles = async () => {
+        if (!selectedFiles || !selectedFiles.length || !user) {
             if (!user) {
                 showNotification("You must be logged in to upload files", "error");
+            } else if (!selectedFiles || !selectedFiles.length) {
+                showNotification("Please select files to upload", "error");
             }
             return;
         }
@@ -326,17 +382,40 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
         setUploadError("");
 
         // Convert FileList to array
-        const fileArray = Array.from(files);
+        const fileArray = Array.from(selectedFiles);
 
-        // Validate all files are Excel files
-        const invalidFiles = fileArray.filter(file => {
+        // Validate all files are Excel files and follow naming convention
+        const invalidExtFiles = fileArray.filter(file => {
             const fileExt = file.name.split(".").pop()?.toLowerCase();
             return fileExt !== "xlsx" && fileExt !== "xls";
         });
 
-        if (invalidFiles.length > 0) {
+        if (invalidExtFiles.length > 0) {
             setUploadError("All files must be valid Excel files (.xlsx or .xls)");
             showNotification("Please upload only valid Excel files (.xlsx or .xls)", "error");
+            setIsUploading(false);
+            return;
+        }
+
+        // Check file name format
+        const invalidNameFiles = fileArray.filter(file => !isValidFileNameFormat(file.name, selectedSportType));
+
+        if (invalidNameFiles.length > 0) {
+            const sportTypeText = selectedSportType === "tennis" ? "tennis" : "table-tennis";
+            const expectedFormat = `${sportTypeText}-DD-MM-YYYY.xlsx`;
+            const suggestedName = suggestValidFileName(sportTypeText);
+
+            setUploadError(`File names must follow the format: ${expectedFormat}. Example: ${suggestedName}`);
+            showNotification(`Invalid file name format. Expected: ${expectedFormat}`, "error");
+
+            // List invalid files
+            if (invalidNameFiles.length <= 3) {
+                const invalidNames = invalidNameFiles.map(f => f.name).join(", ");
+                showNotification(`Invalid file names: ${invalidNames}`, "warning");
+            } else {
+                showNotification(`${invalidNameFiles.length} files have invalid names`, "warning");
+            }
+
             setIsUploading(false);
             return;
         }
@@ -366,6 +445,12 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
 
                 // Refresh file list and automatically select the newly uploaded file
                 await fetchSavedFiles();
+
+                // Reset file input and selected files after successful upload
+                if (fileInputRef.current) {
+                    fileInputRef.current.value = "";
+                }
+                setSelectedFiles(null);
             } else {
                 showNotification("No files were uploaded successfully", "error");
             }
@@ -483,18 +568,20 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
     const handleDeleteFile = async (fileId: string, fileName: string) => {
         if (isUploading || isLoadingFiles) return;
 
-        if (!confirm(`Are you sure you want to delete "${fileName}"? This action cannot be undone.`)) {
-            return;
-        }
+        // Open confirmation modal and set file to delete
+        setFileToDelete({ id: fileId, name: fileName });
+        setIsConfirmModalOpen(true);
+    };
+
+    // Function to confirm file deletion
+    const confirmDeleteFile = async () => {
+        if (!fileToDelete) return;
 
         try {
-            console.log(`Starting deletion of file: ${fileName} (ID: ${fileId})`);
-
             // Use the utility function that handles both Storage and Firestore deletion
-            await deleteFile(fileId);
-            console.log(`File deletion process completed for: ${fileName}`);
+            await deleteFile(fileToDelete.id);
 
-            showNotification(`Successfully deleted file: ${fileName}`, "success");
+            showNotification(`Successfully deleted file: ${fileToDelete.name}`, "success");
             // Refresh the file list
             await fetchSavedFiles();
         } catch (error) {
@@ -507,10 +594,34 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
             } else {
                 showNotification(`Failed to delete file: ${errorMessage}`, "error");
             }
+        } finally {
+            // Close the modal and reset state
+            setIsConfirmModalOpen(false);
+            setFileToDelete(null);
         }
     };
 
-    console.log(availableFiles);
+    // Function to cancel deletion
+    const cancelDeleteFile = () => {
+        setIsConfirmModalOpen(false);
+        setFileToDelete(null);
+    };
+
+    // Handle keyboard events for the modal
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (!isConfirmModalOpen) return;
+
+            if (e.key === "Escape") {
+                cancelDeleteFile();
+            } else if (e.key === "Enter" && fileToDelete) {
+                confirmDeleteFile();
+            }
+        };
+
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, [isConfirmModalOpen, fileToDelete]);
 
     return (
         <AdminOnly>
@@ -557,38 +668,83 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
                             <input
                                 type="file"
                                 id="fileUpload"
-                                onChange={handleFileUpload}
+                                onChange={handleFileSelection}
                                 accept=".xlsx,.xls"
                                 className="block w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-900 file:text-blue-100 hover:file:bg-blue-800"
                                 disabled={isUploading}
                                 multiple // Enable multiple file selection
+                                ref={fileInputRef}
                             />
+                            <p className="mt-1 text-xs text-gray-400">
+                                File names must be in format: <span className="font-mono">{selectedSportType}-DD-MM-YYYY.xlsx</span> (e.g., {suggestValidFileName(selectedSportType)})
+                            </p>
+                            {selectedFiles && selectedFiles.length > 0 && (
+                                <p className="mt-1 text-sm text-blue-400 flex items-center">
+                                    {selectedFiles.length} file{selectedFiles.length !== 1 ? "s" : ""} selected
+                                    <button
+                                        type="button"
+                                        onClick={clearSelectedFiles}
+                                        className="ml-2 text-gray-400 hover:text-gray-300 focus:outline-none"
+                                        aria-label="Clear selected files"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                </p>
+                            )}
                             {uploadError && <p className="mt-1 text-sm text-red-400">{uploadError}</p>}
                         </div>
 
-                        <button
-                            type="button"
-                            onClick={() => fetchSavedFiles()}
-                            className={`px-4 py-2 rounded-md font-medium flex items-center mt-2 md:mt-6 ${isLoadingFiles ? "bg-blue-700" : "bg-blue-600 hover:bg-blue-700"} text-white`}
-                            disabled={isLoadingFiles}
-                        >
-                            {isLoadingFiles ? (
-                                <>
-                                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                    Refreshing...
-                                </>
-                            ) : (
-                                <>
-                                    <svg className="w-4 h-4 mr-2" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
-                                    </svg>
-                                    Refresh Files
-                                </>
-                            )}
-                        </button>
+                        <div className="flex gap-2">
+                            <button
+                                type="button"
+                                onClick={handleUploadSelectedFiles}
+                                className={`px-4 py-2 rounded-md font-medium flex items-center mt-2 md:mt-6 ${isUploading ? "bg-green-700" : "bg-green-600 hover:bg-green-700"} text-white`}
+                                disabled={isUploading || !selectedFiles || selectedFiles.length === 0}
+                            >
+                                {isUploading ? (
+                                    <>
+                                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Uploading...
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg className="w-4 h-4 mr-2" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                                            <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                                        </svg>
+                                        Upload Files
+                                    </>
+                                )}
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => fetchSavedFiles()}
+                                className={`px-4 py-2 rounded-md font-medium flex items-center mt-2 md:mt-6 ${isLoadingFiles ? "bg-blue-700" : "bg-blue-600 hover:bg-blue-700"} text-white`}
+                                disabled={isLoadingFiles}
+                            >
+                                {isLoadingFiles ? (
+                                    <>
+                                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Refreshing...
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg className="w-4 h-4 mr-2" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                                            <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                                        </svg>
+                                        Refresh Files
+                                    </>
+                                )}
+                            </button>
+                        </div>
                     </div>
                 </form>
 
@@ -660,6 +816,41 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
                                         ))}
                                     </tbody>
                                 </table>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Confirmation Modal */}
+                {isConfirmModalOpen && fileToDelete && (
+                    <div
+                        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="modal-title"
+                    >
+                        <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 shadow-xl border border-gray-700">
+                            <h3 id="modal-title" className="text-xl font-semibold mb-4 text-white">Confirm Deletion</h3>
+                            <p className="text-gray-300 mb-6">
+                                Are you sure you want to delete <span className="font-semibold text-white">&ldquo;{fileToDelete.name}&rdquo;</span>? This action cannot be undone.
+                            </p>
+                            <div className="flex justify-end space-x-3">
+                                <button
+                                    type="button"
+                                    onClick={cancelDeleteFile}
+                                    className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    aria-label="Cancel deletion"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={confirmDeleteFile}
+                                    className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                                    aria-label="Confirm deletion"
+                                >
+                                    Delete
+                                </button>
                             </div>
                         </div>
                     </div>

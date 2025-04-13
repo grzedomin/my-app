@@ -161,7 +161,6 @@ export const useMatchesByDate = (
 
                 // Handle no matches case
                 if (!json[0] || !json[0].matches) {
-                    console.log(`No matches found for date: ${selectedDate} (${formattedDate})`);
                     setApiPlayerNames([]);
                     setApiMatchScores(new Map());
                     setApiMatchSetScores(new Map());
@@ -170,7 +169,6 @@ export const useMatchesByDate = (
                 }
 
                 const matches = json[0].matches;
-                console.log(`Fetched ${matches.length} matches for date: ${selectedDate} (${formattedDate})`);
 
                 // Extract all player names from API data for fuzzy matching
                 const playerNamesSet = new Set<string>();
@@ -269,7 +267,6 @@ export const useMatchesByDate = (
 
                 // Find matches between API data and our predictions
                 if (matches && predictions.length > 0) {
-                    console.log("Searching for matching players between API and predictions...");
 
                     const matchingResults: Array<{
                         apiMatch: ApiMatch,
@@ -286,9 +283,6 @@ export const useMatchesByDate = (
                         const mappedTeam2 = findBestPlayerMatch(prediction.team2);
 
                         // Log the mapping results for debugging
-                        if (mappedTeam1 !== prediction.team1 || mappedTeam2 !== prediction.team2) {
-                            console.log(`Mapped player names: "${prediction.team1}" → "${mappedTeam1}", "${prediction.team2}" → "${mappedTeam2}"`);
-                        }
 
                         // Now check for matches with these mapped names
                         matches.forEach((match: ApiMatch) => {
