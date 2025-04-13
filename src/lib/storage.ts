@@ -347,20 +347,46 @@ export const deleteFile = async (fileId: string): Promise<void> => {
             return;
         }
 
-        // Try to delete from storage
+        console.log("File data retrieved for deletion:", fileData);
+
+        // Try to delete from storage - Use a more direct approach
         try {
+            console.log("Attempting to delete from Storage:", fileData.filePath);
             const storageRef = ref(storage, fileData.filePath);
-            await deleteObject(storageRef);
-            console.log("File deleted from Storage:", fileData.filePath);
+
+            // First try the normal path
+            try {
+                await deleteObject(storageRef);
+                console.log("File successfully deleted from Storage (normal path):", fileData.filePath);
+            } catch (normalPathError) {
+                console.warn("Error with normal path deletion, trying alternative approaches:", normalPathError);
+
+                // Try with direct path that follows the betting-files/userId/fileId.ext pattern
+                const fileParts = fileData.filePath.split('/');
+                const fileName = fileParts[fileParts.length - 1];
+                const userId = fileData.userId;
+
+                const directPath = `betting-files/${userId}/${fileName}`;
+                console.log("Trying direct path deletion:", directPath);
+
+                try {
+                    const directRef = ref(storage, directPath);
+                    await deleteObject(directRef);
+                    console.log("File successfully deleted from Storage (direct path):", directPath);
+                } catch (directPathError) {
+                    console.error("Failed to delete file from Storage using direct path:", directPathError);
+                    throw directPathError; // Re-throw to handle in the outer catch
+                }
+            }
         } catch (storageError) {
-            console.error("Error deleting file from Storage:", storageError);
+            console.error("All attempts to delete from Storage failed:", storageError);
             // Continue to delete from Firestore even if Storage deletion fails
             // This helps clean up orphaned records
         }
 
         // Delete from Firestore
         await deleteDoc(doc(db, "files", fileId));
-        console.log("File metadata deleted from Firestore:", fileId);
+        console.log("File metadata successfully deleted from Firestore:", fileId);
     } catch (error) {
         console.error("Error in deleteFile:", error);
         throw error;

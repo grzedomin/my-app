@@ -8,7 +8,8 @@ import {
     cleanupOrphanedFiles,
     fetchExcelFile,
     getFilesByDate,
-    getFilesBySportType
+    getFilesBySportType,
+    deleteFile
 } from "@/lib/storage";
 import { FirebaseError } from "firebase/app";
 import * as XLSX from "xlsx";
@@ -478,6 +479,38 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
         return dateMatch && dateMatch[1] ? dateMatch[1].trim() : dateStr;
     };
 
+    // Function to handle file deletion
+    const handleDeleteFile = async (fileId: string, fileName: string) => {
+        if (isUploading || isLoadingFiles) return;
+
+        if (!confirm(`Are you sure you want to delete "${fileName}"? This action cannot be undone.`)) {
+            return;
+        }
+
+        try {
+            console.log(`Starting deletion of file: ${fileName} (ID: ${fileId})`);
+
+            // Use the utility function that handles both Storage and Firestore deletion
+            await deleteFile(fileId);
+            console.log(`File deletion process completed for: ${fileName}`);
+
+            showNotification(`Successfully deleted file: ${fileName}`, "success");
+            // Refresh the file list
+            await fetchSavedFiles();
+        } catch (error) {
+            console.error("Error deleting file:", error);
+
+            // Check if it's a Firebase permission error
+            const errorMessage = error instanceof Error ? error.message : "Unknown error";
+            if (errorMessage.includes("permission-denied")) {
+                showNotification("Permission denied. You may not have proper access rights.", "error");
+            } else {
+                showNotification(`Failed to delete file: ${errorMessage}`, "error");
+            }
+        }
+    };
+
+    console.log(availableFiles);
 
     return (
         <AdminOnly>
@@ -580,7 +613,57 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
                     </div>
                 )}
 
-
+                {/* File List */}
+                {availableFiles.length > 0 && (
+                    <div className="mt-6">
+                        <h3 className="text-md font-semibold mb-2 text-white">Available Files</h3>
+                        <div className="bg-gray-900 rounded-md p-2 overflow-hidden">
+                            <div className="max-h-60 overflow-y-auto">
+                                <table className="min-w-full divide-y divide-gray-700">
+                                    <thead className="bg-gray-800 sticky top-0">
+                                        <tr>
+                                            <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">File Name</th>
+                                            <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Date</th>
+                                            <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Sport Type</th>
+                                            <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-gray-900 divide-y divide-gray-800">
+                                        {availableFiles.map((file) => (
+                                            <tr key={file.id} className="hover:bg-gray-800">
+                                                <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-300">{file.fileName}</td>
+                                                <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-300">{formatDateDisplay(file.fileDate)}</td>
+                                                <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-300">{file.sportType || "Unknown"}</td>
+                                                <td className="px-3 py-2 whitespace-nowrap text-sm">
+                                                    <div className="flex space-x-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleLoadFile(file)}
+                                                            className="text-blue-400 hover:text-blue-300"
+                                                            disabled={isUploading || isLoadingFiles}
+                                                            aria-label={`Load file ${file.fileName}`}
+                                                        >
+                                                            Load
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleDeleteFile(file.id, file.fileName)}
+                                                            className="text-red-400 hover:text-red-300"
+                                                            disabled={isUploading || isLoadingFiles}
+                                                            aria-label={`Delete file ${file.fileName}`}
+                                                        >
+                                                            Delete
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </AdminOnly>
     );
