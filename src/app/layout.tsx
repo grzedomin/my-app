@@ -1,5 +1,6 @@
 import { AuthProvider } from "@/context/AuthContext";
 import { NotificationProvider } from "@/context/NotificationContext";
+import { UserProfileProvider } from "@/context/UserProfileContext";
 import Navbar from "@/components/ui/Navbar";
 import { Inter } from "next/font/google";
 import type { Metadata } from "next";
@@ -22,8 +23,10 @@ export default function RootLayout({
       <body className={inter.className}>
         <AuthProvider>
           <NotificationProvider>
-            <Navbar />
-            {children}
+            <UserProfileProvider>
+              <Navbar />
+              {children}
+            </UserProfileProvider>
           </NotificationProvider>
         </AuthProvider>
       </body>

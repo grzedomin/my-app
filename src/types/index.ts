@@ -23,4 +23,16 @@ export interface FileData {
     isPublic?: boolean;
     fileDate?: string;
     sportType?: string;
+}
+
+export type SubscriptionPlan = "monthly" | "yearly" | "none";
+
+export interface Subscription {
+    id: string;
+    userId: string;
+    plan: SubscriptionPlan;
+    startDate: string;
+    endDate: string;
+    isActive: boolean;
+    autoRenew: boolean;
 } 

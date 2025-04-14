@@ -31,5 +31,23 @@ service cloud.firestore {
       // No one can delete user documents
       allow delete: if false;
     }
+    
+    // Subscriptions collection rules
+    match /subscriptions/{userId} {
+      // Users can read their own subscription data
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // Admins can read all subscription data
+      allow read: if isAdmin();
+      
+      // Users can create and update their own subscription entry
+      allow create, update: if request.auth != null && request.auth.uid == userId && userId == request.resource.data.userId;
+      
+      // Admins can also update any subscription
+      allow update: if isAdmin();
+      
+      // No one can delete subscription data
+      allow delete: if false;
+    }
   }
 } 

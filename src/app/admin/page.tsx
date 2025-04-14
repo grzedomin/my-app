@@ -22,22 +22,22 @@ export default function AdminDashboard() {
     if (!isAuthorized) return null;
 
     return (
-        <div className="min-h-screen bg-gray-50">
-            <nav className="bg-white shadow">
+        <div className="min-h-screen bg-gray-900 text-white">
+            <nav className="bg-gray-800 shadow border-b border-gray-700">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex justify-between h-16">
                         <div className="flex items-center space-x-4">
                             <h1 className="text-xl font-bold">Admin Dashboard</h1>
                             <Link
                                 href="/dashboard"
-                                className="bg-gray-600 px-4 py-2 text-white rounded-md hover:bg-gray-700"
+                                className="bg-gray-700 px-4 py-2 text-white rounded-md hover:bg-gray-600 transition-colors"
                             >
                                 Back to Dashboard
                             </Link>
                         </div>
                         <div className="flex items-center">
                             <span className="mr-4">{user?.email}</span>
-                            <span className="bg-indigo-100 text-indigo-800 py-1 px-2 rounded-full text-sm font-semibold">
+                            <span className="bg-indigo-900 text-indigo-200 py-1 px-2 rounded-full text-sm font-semibold">
                                 Admin
                             </span>
                         </div>
@@ -51,17 +51,17 @@ export default function AdminDashboard() {
 
                     <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
                         {/* User Management Card */}
-                        <div className="bg-white overflow-hidden shadow rounded-lg">
+                        <div className="bg-gray-800 overflow-hidden shadow rounded-lg border border-gray-700">
                             <div className="px-4 py-5 sm:p-6">
                                 <div className="flex items-center">
-                                    <div className="flex-shrink-0 bg-indigo-500 rounded-md p-3">
+                                    <div className="flex-shrink-0 bg-indigo-600 rounded-md p-3">
                                         <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                                         </svg>
                                     </div>
                                     <div className="ml-5 w-0 flex-1">
-                                        <dt className="text-lg font-medium text-gray-900">User Management</dt>
-                                        <dd className="mt-2 text-sm text-gray-500">
+                                        <dt className="text-lg font-medium text-white">User Management</dt>
+                                        <dd className="mt-2 text-sm text-gray-400">
                                             View and manage all users in the system
                                         </dd>
                                     </div>
@@ -77,45 +77,19 @@ export default function AdminDashboard() {
                             </div>
                         </div>
 
-                        {/* Betting Predictions Management Card */}
-                        <div className="bg-white overflow-hidden shadow rounded-lg">
-                            <div className="px-4 py-5 sm:p-6">
-                                <div className="flex items-center">
-                                    <div className="flex-shrink-0 bg-blue-500 rounded-md p-3">
-                                        <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h10a2 2 0 012 2v10a2 2 0 01-2 2z" />
-                                        </svg>
-                                    </div>
-                                    <div className="ml-5 w-0 flex-1">
-                                        <dt className="text-lg font-medium text-gray-900">Betting Predictions</dt>
-                                        <dd className="mt-2 text-sm text-gray-500">
-                                            Manage betting prediction files and data
-                                        </dd>
-                                    </div>
-                                </div>
-                                <div className="mt-5">
-                                    <Link
-                                        href="/admin/predictions"
-                                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                                    >
-                                        Manage Predictions
-                                    </Link>
-                                </div>
-                            </div>
-                        </div>
 
                         {/* File Management Card */}
-                        <div className="bg-white overflow-hidden shadow rounded-lg">
+                        <div className="bg-gray-800 overflow-hidden shadow rounded-lg border border-gray-700">
                             <div className="px-4 py-5 sm:p-6">
                                 <div className="flex items-center">
-                                    <div className="flex-shrink-0 bg-purple-500 rounded-md p-3">
+                                    <div className="flex-shrink-0 bg-purple-600 rounded-md p-3">
                                         <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                         </svg>
                                     </div>
                                     <div className="ml-5 w-0 flex-1">
-                                        <dt className="text-lg font-medium text-gray-900">File Management</dt>
-                                        <dd className="mt-2 text-sm text-gray-500">
+                                        <dt className="text-lg font-medium text-white">File Management</dt>
+                                        <dd className="mt-2 text-sm text-gray-400">
                                             Upload and manage files
                                         </dd>
                                     </div>
@@ -132,7 +106,7 @@ export default function AdminDashboard() {
                         </div>
                     </div>
 
-                    <div className="mt-8 bg-yellow-50 border-l-4 border-yellow-400 p-4">
+                    <div className="mt-8 bg-yellow-900 border-l-4 border-yellow-500 p-4 text-yellow-200">
                         <div className="flex">
                             <div className="flex-shrink-0">
                                 <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
@@ -140,7 +114,7 @@ export default function AdminDashboard() {
                                 </svg>
                             </div>
                             <div className="ml-3">
-                                <p className="text-sm text-yellow-700">
+                                <p className="text-sm text-yellow-200">
                                     <strong>Note:</strong> As an admin, you have elevated privileges. Use them responsibly.
                                 </p>
                             </div>
