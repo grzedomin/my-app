@@ -919,7 +919,7 @@ const BettingPredictionsTable: React.FC = () => {
                                 ? "Loading predictions..."
                                 : selectedDate
                                     ? `No predictions found for the selected date: ${formatDateDisplay(selectedDate)}`
-                                    : "Please upload an Excel file with betting predictions."
+                                    : "No predictions available yet!"
                             }
                         </p>
                     </div>

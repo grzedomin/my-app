@@ -14,10 +14,8 @@ export default function FileManagement() {
     const router = useRouter();
     const { isAuthorized } = useRoleCheck("admin");
 
-    const [predictionsData, setPredictionsData] = useState<BettingPrediction[]>([]);
     const [isUploading, setIsUploading] = useState(false);
     const [isLoadingFiles, setIsLoadingFiles] = useState(false);
-    const [selectedSportType, setSelectedSportType] = useState<string>("tennis");
 
     useEffect(() => {
         // If user is not logged in, redirect to signin
@@ -26,13 +24,10 @@ export default function FileManagement() {
         }
     }, [user, router]);
 
+    // Dummy handler for the onFileProcessed prop - we need to accept the data parameter
+    // even though we don't use it, as it's required by the component interface
     const handleFileProcessed = (data: BettingPrediction[]) => {
-        setPredictionsData(data);
-    };
-
-    // Handle sport type change
-    const handleSportTypeChange = (sportType: string) => {
-        setSelectedSportType(sportType);
+        // The data is not used in this simplified version
     };
 
     // If not authorized, show loading or nothing while redirecting
@@ -66,31 +61,6 @@ export default function FileManagement() {
                 <div className="px-4 py-6 sm:px-0">
                     <h2 className="text-2xl font-bold mb-6">Excel File Management</h2>
 
-                    <div className="mb-6">
-                        <div className="mb-4 flex space-x-4">
-                            <button
-                                className={`px-4 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 ${selectedSportType === "tennis"
-                                    ? "bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500"
-                                    : "bg-gray-200 text-gray-700 hover:bg-gray-300 focus:ring-gray-500"
-                                    }`}
-                                onClick={() => handleSportTypeChange("tennis")}
-                                disabled={isUploading || isLoadingFiles}
-                            >
-                                Tennis
-                            </button>
-                            <button
-                                className={`px-4 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 ${selectedSportType === "table-tennis"
-                                    ? "bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500"
-                                    : "bg-gray-200 text-gray-700 hover:bg-gray-300 focus:ring-gray-500"
-                                    }`}
-                                onClick={() => handleSportTypeChange("table-tennis")}
-                                disabled={isUploading || isLoadingFiles}
-                            >
-                                Table Tennis
-                            </button>
-                        </div>
-                    </div>
-
                     <AdminOnly>
                         <div className="mb-6 p-6 bg-white rounded-lg shadow-lg">
                             <AdminExcelPanel
@@ -99,68 +69,10 @@ export default function FileManagement() {
                                 setIsUploading={setIsUploading}
                                 isLoadingFiles={isLoadingFiles}
                                 setIsLoadingFiles={setIsLoadingFiles}
-                                selectedSportType={selectedSportType}
                             />
                         </div>
                     </AdminOnly>
 
-                    {predictionsData.length > 0 && (
-                        <div className="mt-6 p-6 bg-white rounded-lg shadow-lg">
-                            <h3 className="text-lg font-medium mb-4">Loaded Predictions</h3>
-                            <div className="text-sm text-gray-500 mb-2">
-                                Successfully loaded {predictionsData.length} predictions
-                            </div>
-                            <div className="overflow-x-auto">
-                                <table className="min-w-full divide-y divide-gray-200">
-                                    <thead className="bg-gray-50">
-                                        <tr>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                                Date
-                                            </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                                Team 1
-                                            </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                                Team 2
-                                            </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                                Score Prediction
-                                            </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                                Confidence
-                                            </th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="bg-white divide-y divide-gray-200">
-                                        {predictionsData.slice(0, 5).map((prediction, index) => (
-                                            <tr key={index} className={index % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    {prediction.date}
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    {prediction.team1} ({prediction.oddTeam1})
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    {prediction.team2} ({prediction.oddTeam2})
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    {prediction.scorePrediction}
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    {prediction.confidence}%
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                                {predictionsData.length > 5 && (
-                                    <div className="mt-2 text-sm text-gray-500">
-                                        Showing 5 of {predictionsData.length} records
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
                 </div>
             </main>
         </div>

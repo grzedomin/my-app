@@ -6,8 +6,6 @@ import {
     getAllFiles,
     cleanupOrphanedFiles,
     fetchExcelFile,
-    getFilesByDate,
-    getFilesBySportType,
     deleteFile
 } from "@/lib/storage";
 import { FirebaseError } from "firebase/app";
@@ -54,52 +52,76 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
 
     const [uploadError, setUploadError] = useState("");
     const [availableFiles, setAvailableFiles] = useState<FileData[]>([]);
-    const [selectedDate, setSelectedDate] = useState<string>("");
-    const [availableDates, setAvailableDates] = useState<string[]>([]);
     const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
 
     // Confirmation modal state
     const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
     const [fileToDelete, setFileToDelete] = useState<{ id: string, name: string } | null>(null);
 
-    // Get sport type from URL params or use the prop value
-    const [selectedSportType, setSelectedSportType] = useState<string>(() => {
-        const sportParam = searchParams.get("sport");
-        return sportParam || propSportType;
-    });
+    // Get default sport type from URL params or props for viewing - but we won't use this for filtering
+    const [viewSportType, setViewSportType] = useState<string>("all");
 
-    // Handle sport type change
-    const handleSportTypeChange = (sportType: string) => {
-        if (isUploading || isLoadingFiles) return;
-
-        setSelectedSportType(sportType);
-
-        // Update URL with the new sport type
-        const params = new URLSearchParams(window.location.search);
-        if (sportType === "tennis") {
-            params.delete("sport");
-        } else {
-            params.set("sport", sportType);
-        }
-
-        // Update URL without reloading the page
-        const newUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
-        window.history.pushState({}, "", newUrl);
-
-        // Reset data when changing sport type
-        setSelectedDate("");
-        fetchSavedFiles(); // Will fetch files for the new sport type
-    };
-
-    // Update when propSportType changes
+    // Update when propSportType changes - we keep these functions for compatibility
     useEffect(() => {
-        if (propSportType !== selectedSportType) {
-            setSelectedSportType(propSportType);
-            // Reset data when sport type changes from parent
-            setSelectedDate("");
+        if (propSportType !== viewSportType) {
+            setViewSportType(propSportType);
             fetchSavedFiles();
         }
     }, [propSportType]);
+
+    // Update when search params change
+    useEffect(() => {
+        const sportParam = searchParams.get("sport");
+        if (sportParam && sportParam !== viewSportType) {
+            setViewSportType(sportParam);
+            fetchSavedFiles();
+        }
+    }, [searchParams]);
+
+    // Function to detect sport type from file name
+    const detectSportTypeFromFileName = (fileName: string): string | null => {
+        // Extract file name without extension
+        const fileNameWithoutExt = fileName.split(".")[0];
+
+        // Check for tennis pattern
+        if (fileNameWithoutExt.startsWith("tennis-")) {
+            return "tennis";
+        }
+
+        // Check for table tennis pattern
+        if (fileNameWithoutExt.startsWith("table-tennis-")) {
+            return "table-tennis";
+        }
+
+        return null;
+    };
+
+    // Function to check if file name follows the required format
+    const isValidFileNameFormat = (fileName: string): boolean => {
+        // Extract file name without extension
+        const fileNameWithoutExt = fileName.split(".")[0];
+
+        // Define the expected format for both sport types
+        const datePattern = "\\d{2}-\\d{2}-\\d{4}"; // Format: DD-MM-YYYY
+        const tennisPattern = new RegExp(`^tennis-${datePattern}$`);
+        const tableTennisPattern = new RegExp(`^table-tennis-${datePattern}$`);
+
+        return tennisPattern.test(fileNameWithoutExt) || tableTennisPattern.test(fileNameWithoutExt);
+    };
+
+    // Function to suggest valid file names based on current date
+    const suggestValidFileNames = (): string[] => {
+        const today = new Date();
+        const day = String(today.getDate()).padStart(2, "0");
+        const month = String(today.getMonth() + 1).padStart(2, "0");
+        const year = today.getFullYear();
+
+        const formattedDate = `${day}-${month}-${year}`;
+        return [
+            `tennis-${formattedDate}.xlsx`,
+            `table-tennis-${formattedDate}.xlsx`
+        ];
+    };
 
     // Function to process Excel file - returns true if successful, false otherwise
     const processExcelFile = async (file: File): Promise<boolean> => {
@@ -261,35 +283,16 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
                 await cleanupOrphanedFiles(user.uid);
             }
 
-            // Get all files regardless of the user
-            let files;
-            if (selectedSportType) {
-                files = await getFilesBySportType(selectedSportType);
-            } else {
-                files = await getAllFiles();
-            }
+            // Always get all files regardless of the user and sport type
+            const files = await getAllFiles();
 
             setAvailableFiles(files);
-
-            // Extract unique dates from files
-            const dates = files
-                .map(file => file.fileDate)
-                .filter((date): date is string => !!date)
-                .filter((date, index, self) => self.indexOf(date) === index)
-                .sort();
-
-            setAvailableDates(dates);
 
             // Automatically load the most recent file (if any exist)
             if (files.length > 0) {
                 // Sort files by uploadDate (descending order - newest first)
                 const sortedFiles = [...files].sort((a, b) => b.uploadDate - a.uploadDate);
                 const mostRecentFile = sortedFiles[0];
-
-                // Set the selected date if available
-                if (mostRecentFile.fileDate) {
-                    setSelectedDate(mostRecentFile.fileDate);
-                }
 
                 // Load the most recent file
                 await handleLoadFile(mostRecentFile);
@@ -324,36 +327,6 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
         }
     };
 
-    // Function to check if file name follows the required format
-    const isValidFileNameFormat = (fileName: string, sportType: string): boolean => {
-        // Extract file name without extension
-        const fileNameWithoutExt = fileName.split(".")[0];
-
-        // Define the expected format based on sport type
-        const datePattern = "\\d{2}-\\d{2}-\\d{4}"; // Format: DD-MM-YYYY
-        const tennisPattern = new RegExp(`^tennis-${datePattern}$`);
-        const tableTennisPattern = new RegExp(`^table-tennis-${datePattern}$`);
-
-        if (sportType === "tennis") {
-            return tennisPattern.test(fileNameWithoutExt);
-        } else if (sportType === "table-tennis") {
-            return tableTennisPattern.test(fileNameWithoutExt);
-        }
-
-        return false;
-    };
-
-    // Function to suggest a valid file name based on current date
-    const suggestValidFileName = (sportType: string): string => {
-        const today = new Date();
-        const day = String(today.getDate()).padStart(2, "0");
-        const month = String(today.getMonth() + 1).padStart(2, "0");
-        const year = today.getFullYear();
-
-        const formattedDate = `${day}-${month}-${year}`;
-        return `${sportType}-${formattedDate}.xlsx`;
-    };
-
     // Function to handle file upload
     const handleUploadSelectedFiles = async () => {
         if (!selectedFiles || !selectedFiles.length || !user) {
@@ -385,15 +358,14 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
         }
 
         // Check file name format
-        const invalidNameFiles = fileArray.filter(file => !isValidFileNameFormat(file.name, selectedSportType));
+        const invalidNameFiles = fileArray.filter(file => !isValidFileNameFormat(file.name));
 
         if (invalidNameFiles.length > 0) {
-            const sportTypeText = selectedSportType === "tennis" ? "tennis" : "table-tennis";
-            const expectedFormat = `${sportTypeText}-DD-MM-YYYY.xlsx`;
-            const suggestedName = suggestValidFileName(sportTypeText);
+            const expectedFormats = ["tennis-DD-MM-YYYY.xlsx", "table-tennis-DD-MM-YYYY.xlsx"];
+            const suggestedExamples = suggestValidFileNames().join(" or ");
 
-            setUploadError(`File names must follow the format: ${expectedFormat}. Example: ${suggestedName}`);
-            showNotification(`Invalid file name format. Expected: ${expectedFormat}`, "error");
+            setUploadError(`File names must follow one of these formats: ${expectedFormats.join(", ")}. Examples: ${suggestedExamples}`);
+            showNotification(`Invalid file name format. Expected formats: ${expectedFormats.join(" or ")}`, "error");
 
             // List invalid files
             if (invalidNameFiles.length <= 3) {
@@ -408,15 +380,32 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
         }
 
         try {
-            // Process and validate each file before upload
-            const validFiles: File[] = [];
+            // Group files by sport type
+            const filesByType: Record<string, File[]> = {};
 
             for (const file of fileArray) {
-                const isValidExcel = await processExcelFile(file);
-                if (isValidExcel) {
-                    validFiles.push(file);
+                const sportType = detectSportTypeFromFileName(file.name);
+                if (sportType) {
+                    if (!filesByType[sportType]) {
+                        filesByType[sportType] = [];
+                    }
+                    filesByType[sportType].push(file);
                 } else {
-                    showNotification(`File "${file.name}" has invalid format and will be skipped`, "warning");
+                    throw new Error(`Could not determine sport type for file: ${file.name}`);
+                }
+            }
+
+            // Process and validate each file before upload
+            const validFiles: { file: File, sportType: string }[] = [];
+
+            for (const sportType in filesByType) {
+                for (const file of filesByType[sportType]) {
+                    const isValidExcel = await processExcelFile(file);
+                    if (isValidExcel) {
+                        validFiles.push({ file, sportType });
+                    } else {
+                        showNotification(`File "${file.name}" has invalid format and will be skipped`, "warning");
+                    }
                 }
             }
 
@@ -424,11 +413,22 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
                 throw new Error("No valid Excel files to upload");
             }
 
-            // Upload all valid files with the selected sport type
-            const uploadedFiles = await uploadMultipleFiles(validFiles, user.uid, "betting-files", selectedSportType);
+            // Upload files by sport type
+            let totalUploaded = 0;
 
-            if (uploadedFiles.length > 0) {
-                showNotification(`Successfully uploaded ${uploadedFiles.length} file(s)`, "success");
+            for (const sportType in filesByType) {
+                const filesToUpload = validFiles
+                    .filter(item => item.sportType === sportType)
+                    .map(item => item.file);
+
+                if (filesToUpload.length > 0) {
+                    const uploadedFiles = await uploadMultipleFiles(filesToUpload, user.uid, "betting-files", sportType);
+                    totalUploaded += uploadedFiles.length;
+                }
+            }
+
+            if (totalUploaded > 0) {
+                showNotification(`Successfully uploaded ${totalUploaded} file(s)`, "success");
 
                 // Refresh file list and automatically select the newly uploaded file
                 await fetchSavedFiles();
@@ -468,78 +468,13 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
         }
     };
 
-    // Handle date selection
-    const handleDateChange = async (date: string) => {
+    // Function to handle file deletion
+    const handleDeleteFile = async (fileId: string, fileName: string) => {
         if (isUploading || isLoadingFiles) return;
 
-        setSelectedDate(date);
-
-        // If "All Dates" option is selected (empty date)
-        if (!date) {
-            // Sort files by uploadDate (newest first) and load the most recent
-            const sortedFiles = [...availableFiles].sort((a, b) => b.uploadDate - a.uploadDate);
-            if (sortedFiles.length > 0) {
-                setIsLoadingFiles(true);
-                try {
-                    await handleLoadFile(sortedFiles[0]);
-                    showNotification("Loaded most recent file", "success");
-                } catch (error) {
-                    console.error("Error loading most recent file:", error);
-                    showNotification("Error loading most recent file", "error");
-                } finally {
-                    setIsLoadingFiles(false);
-                }
-            } else {
-                // No files to load
-                onFileProcessed([]);
-            }
-            return;
-        }
-
-        setIsLoadingFiles(true);
-
-        try {
-            // Get files for the selected date and sport type
-            const files = await getFilesByDate(date, selectedSportType);
-
-            if (files.length > 0) {
-                // Use the first file with this date and load it automatically
-                await handleLoadFile(files[0]);
-                showNotification(`Loaded data for date: ${formatDateDisplay(date)}`, "success");
-            } else {
-                // Try to find a match in the existing files list
-                const matchingFiles = availableFiles.filter(file =>
-                    file.fileDate && (
-                        file.fileDate === date ||
-                        file.fileDate.includes(date)
-                    ) && (
-                        !selectedSportType || file.sportType === selectedSportType
-                    )
-                );
-
-                if (matchingFiles.length > 0) {
-                    // Load the first matching file
-                    await handleLoadFile(matchingFiles[0]);
-                    showNotification(`Loaded data for date: ${formatDateDisplay(date)}`, "success");
-                } else {
-                    showNotification(`No files found for date: ${date}`, "warning");
-                    // Clear predictions if no files found
-                    onFileProcessed([]);
-                }
-            }
-        } catch (error) {
-            console.error("Error loading files for date:", error);
-
-            // Check if it's a Firebase index error
-            const errorMessage = error instanceof Error ? error.message : "Unknown error";
-            if (errorMessage.includes("requires an index")) {
-                showNotification("Firebase index is being created. This may take a few minutes. Please try again later or use the 'Load' button on a file directly.", "warning");
-            } else {
-                showNotification("Error loading files for selected date", "error");
-            }
-        } finally {
-            setIsLoadingFiles(false);
-        }
+        // Open confirmation modal and set file to delete
+        setFileToDelete({ id: fileId, name: fileName });
+        setIsConfirmModalOpen(true);
     };
 
     // Helper function to format date display
@@ -549,15 +484,6 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
         // Extract main date part if it includes time
         const dateMatch = dateStr.match(/(\d+[a-z]{2}\s+[A-Za-z]+\s+\d{4})/);
         return dateMatch && dateMatch[1] ? dateMatch[1].trim() : dateStr;
-    };
-
-    // Function to handle file deletion
-    const handleDeleteFile = async (fileId: string, fileName: string) => {
-        if (isUploading || isLoadingFiles) return;
-
-        // Open confirmation modal and set file to delete
-        setFileToDelete({ id: fileId, name: fileName });
-        setIsConfirmModalOpen(true);
     };
 
     // Function to confirm file deletion
@@ -619,38 +545,8 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
                 <form className="mb-6">
                     <div className="flex flex-col md:flex-row items-start gap-4">
                         <div className="w-full">
-                            <div className="mb-4">
-                                <label htmlFor="sportType" className="block text-sm font-medium text-gray-300 mb-1">
-                                    Sport Type
-                                </label>
-                                <div className="flex flex-wrap gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => handleSportTypeChange("tennis")}
-                                        className={`px-4 py-2 rounded-md ${selectedSportType === "tennis"
-                                            ? "bg-blue-600 text-white"
-                                            : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-                                            }`}
-                                        disabled={isUploading || isLoadingFiles}
-                                    >
-                                        Upload Tennis File
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleSportTypeChange("table-tennis")}
-                                        className={`px-4 py-2 rounded-md ${selectedSportType === "table-tennis"
-                                            ? "bg-blue-600 text-white"
-                                            : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-                                            }`}
-                                        disabled={isUploading || isLoadingFiles}
-                                    >
-                                        Upload Table Tennis File
-                                    </button>
-                                </div>
-                            </div>
-
                             <label htmlFor="fileUpload" className="block text-sm font-medium text-gray-300 mb-1">
-                                Upload Excel File(s) for {selectedSportType === "tennis" ? "Tennis" : "Table Tennis"}
+                                Upload Excel File(s)
                             </label>
                             <input
                                 type="file"
@@ -663,7 +559,10 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
                                 ref={fileInputRef}
                             />
                             <p className="mt-1 text-xs text-gray-400">
-                                File names must be in format: <span className="font-mono">{selectedSportType}-DD-MM-YYYY.xlsx</span> (e.g., {suggestValidFileName(selectedSportType)})
+                                File names must be in format: <span className="font-mono">tennis-DD-MM-YYYY.xlsx</span> or <span className="font-mono">table-tennis-DD-MM-YYYY.xlsx</span>
+                            </p>
+                            <p className="mt-1 text-xs text-blue-400">
+                                Example: {suggestValidFileNames().join(" or ")}
                             </p>
                             {selectedFiles && selectedFiles.length > 0 && (
                                 <p className="mt-1 text-sm text-blue-400 flex items-center">
@@ -734,27 +633,6 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
                         </div>
                     </div>
                 </form>
-
-                {/* Date Filter */}
-                {availableDates.length > 0 && (
-                    <div className="mb-6">
-                        <label htmlFor="dateFilter" className="block text-sm font-medium text-gray-300 mb-1">
-                            Filter by Date
-                        </label>
-                        <select
-                            id="dateFilter"
-                            value={selectedDate}
-                            onChange={(e) => handleDateChange(e.target.value)}
-                            className="block w-full md:w-64 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                            disabled={isLoadingFiles || isUploading}
-                        >
-                            <option value="">All Dates</option>
-                            {availableDates.map((date) => (
-                                <option key={date} value={date}>{formatDateDisplay(date)}</option>
-                            ))}
-                        </select>
-                    </div>
-                )}
 
                 {/* File List */}
                 {availableFiles.length > 0 && (
