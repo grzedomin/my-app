@@ -108,6 +108,13 @@ const cleanFinalScore = (finalScore: string): string => {
     return finalScore.replace(/\s*\([^)]+\)/, "").trim();
 };
 
+// Cache for files by sport type to prevent redundant Firebase queries
+const filesCache: { [sportType: string]: { timestamp: number; files: FileData[] } } = {};
+const CACHE_EXPIRY_MS = 60 * 1000; // Cache expires after 1 minute
+
+// Cache for parsed file data to prevent processing the same file multiple times
+const fileDataCache: { [filePath: string]: { timestamp: number; data: BettingPrediction[] } } = {};
+
 const BettingPredictionsTable: React.FC = () => {
     const { showNotification } = useNotification();
     const searchParams = useSearchParams();
@@ -123,6 +130,9 @@ const BettingPredictionsTable: React.FC = () => {
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [hasMore, setHasMore] = useState(true);
     const [pageNumber, setPageNumber] = useState(1);
+    const [isTableLoading, setIsTableLoading] = useState(false);
+    const [loadingStatus, setLoadingStatus] = useState<string>("");
+    const activeSportTypeChangeRef = useRef<string | null>(null);
 
     // Get initial sport type from URL parameters or default to tennis
     const [selectedSportType, setSelectedSportType] = useState<string>(() => {
@@ -232,20 +242,44 @@ const BettingPredictionsTable: React.FC = () => {
         fetchSavedFiles();
     }, [selectedSportType]);
 
-    // Function to fetch saved files from database
+    // Function to fetch saved files from database with caching
     const fetchSavedFiles = async () => {
         try {
             setIsLoadingFiles(true);
+            setIsTableLoading(true);
+            // Clear current predictions immediately to show loading state
+            setDisplayedPredictions([]);
 
-            // Get all files regardless of the user, filtered by sport type if selected
-            let files;
-            if (selectedSportType) {
-                files = await getFilesBySportType(selectedSportType);
+            // Check if we have cached files for this sport type
+            const currentTime = Date.now();
+            const cachedData = filesCache[selectedSportType];
+
+            let files: FileData[];
+
+            if (cachedData && (currentTime - cachedData.timestamp) < CACHE_EXPIRY_MS) {
+                // Use cached files if they're still valid
+                console.log(`Using cached files for ${selectedSportType}`);
+                setLoadingStatus("Using cached data...");
+                files = cachedData.files;
             } else {
-                files = await getAllFiles();
+                // Fetch fresh files from Firebase
+                console.log(`Fetching new files for ${selectedSportType}`);
+                setLoadingStatus(`Fetching ${selectedSportType} files...`);
+                if (selectedSportType) {
+                    files = await getFilesBySportType(selectedSportType);
+                } else {
+                    files = await getAllFiles();
+                }
+
+                // Cache the result
+                filesCache[selectedSportType] = {
+                    timestamp: currentTime,
+                    files: files
+                };
             }
 
             // Extract unique dates from files
+            setLoadingStatus("Processing dates...");
             const dates = files
                 .map(file => file.fileDate)
                 .filter((date): date is string => !!date)
@@ -266,14 +300,19 @@ const BettingPredictionsTable: React.FC = () => {
                 }
 
                 // Load the most recent file
+                setLoadingStatus("Loading recent match data...");
                 await handleLoadFile(mostRecentFile);
             } else {
                 // No files - reset predictions
                 setPredictions([]);
+                setLoadingStatus("");
+                setIsTableLoading(false);
             }
         } catch (error) {
             console.error("Error fetching files:", error);
             showNotification("Error fetching saved files", "error");
+            setLoadingStatus("");
+            setIsTableLoading(false);
         } finally {
             setIsLoadingFiles(false);
         }
@@ -329,10 +368,23 @@ const BettingPredictionsTable: React.FC = () => {
         }
     };
 
-    // Function to handle sport type change
+    // Debounced sport type change to prevent multiple rapid calls
     const handleSportTypeChange = (sportType: string) => {
         if (isUploading || isLoadingFiles) return;
+        if (sportType === selectedSportType) return; // Don't do anything if same type selected
 
+        // Set the active sport type change
+        activeSportTypeChangeRef.current = sportType;
+
+        // Show loading state immediately
+        setIsTableLoading(true);
+        // Clear current data to show loading state immediately - we want to
+        // remove old data immediately to avoid confusion
+        setDisplayedPredictions([]);
+        setPredictions([]);
+        setFilteredPredictions([]);
+
+        // Update state
         setSelectedSportType(sportType);
 
         // Update URL with the new sport type
@@ -352,17 +404,35 @@ const BettingPredictionsTable: React.FC = () => {
         // The useEffect will trigger fetchSavedFiles
     };
 
-    // Function to load file data from storage
+    // Function to load file data from storage with caching
     const handleLoadFile = async (fileData: FileData) => {
         if (isUploading) return;
         setIsUploading(true);
 
         try {
-            // Use the new fetchExcelFile function to avoid CORS issues
+            // Check if we have this file cached
+            const currentTime = Date.now();
+            const cachedFileData = fileDataCache[fileData.filePath];
+
+            if (cachedFileData && (currentTime - cachedFileData.timestamp) < CACHE_EXPIRY_MS) {
+                // Use cached data
+                console.log(`Using cached data for file: ${fileData.fileName}`);
+                setLoadingStatus("Loading cached predictions...");
+                setPredictions(cachedFileData.data);
+                setIsUploading(false);
+                setLoadingStatus("");
+                setIsTableLoading(false);
+                return;
+            }
+
+            // Not cached, fetch and process the file
+
+            // Use the fetchExcelFile function to avoid CORS issues
             const arrayBuffer = await fetchExcelFile(fileData.filePath);
 
             try {
                 // Process the Excel file using the array buffer
+                setLoadingStatus("Processing Excel data...");
                 const workbook = XLSX.read(arrayBuffer, { type: "array" });
                 const sheetName = workbook.SheetNames[0];
 
@@ -380,6 +450,7 @@ const BettingPredictionsTable: React.FC = () => {
                 }
                 // Map the Excel data to our BettingPrediction interface
                 // Filter out rows that are just tournament headers (have no Team_1 or Team_2)
+                setLoadingStatus("Preparing match predictions...");
                 const validRows = jsonData.filter((row: ExcelRowData) => {
                     // Skip rows that don't have both Team_1 and Team_2 (likely tournament headers)
                     return row.Team_1 && row.Team_2;
@@ -403,19 +474,32 @@ const BettingPredictionsTable: React.FC = () => {
                         finalScore: row.Final_Score ?? ""
                     } as BettingPrediction;
                 });
+
+                // Cache the processed data
+                fileDataCache[fileData.filePath] = {
+                    timestamp: currentTime,
+                    data: mappedData
+                };
+
                 setPredictions(mappedData);
                 setIsUploading(false);
+                setLoadingStatus("");
+                setIsTableLoading(false);
             } catch (error) {
                 console.error("Error parsing Excel file:", error);
                 const errorMessage = error instanceof Error ? error.message : "Unknown error";
                 showNotification(`Failed to parse Excel file: ${errorMessage}`, "error");
                 setIsUploading(false);
+                setLoadingStatus("");
+                setIsTableLoading(false);
             }
         } catch (error: unknown) {
             console.error("Error loading file:", error);
             const errorMessage = error instanceof Error ? error.message : "Unknown error";
             showNotification(`Failed to load file: ${errorMessage}`, "error");
             setIsUploading(false);
+            setLoadingStatus("");
+            setIsTableLoading(false);
         }
     };
 
@@ -575,23 +659,33 @@ const BettingPredictionsTable: React.FC = () => {
                 <div className="flex space-x-2">
                     <button
                         onClick={() => handleSportTypeChange("tennis")}
-                        className={`px-4 py-2 rounded-md ${selectedSportType === "tennis"
+                        className={`px-4 py-2 rounded-md flex items-center justify-center ${selectedSportType === "tennis"
                             ? "bg-blue-600 text-white"
                             : "bg-gray-700 text-gray-300 hover:bg-gray-600"
                             }`}
                         disabled={isLoadingFiles || isUploading}
                     >
-                        Tennis
+                        <span>Tennis</span>
+                        {isTableLoading && selectedSportType === "tennis" && (
+                            <span className="ml-2 inline-block">
+                                <div className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent"></div>
+                            </span>
+                        )}
                     </button>
                     <button
                         onClick={() => handleSportTypeChange("table-tennis")}
-                        className={`px-4 py-2 rounded-md ${selectedSportType === "table-tennis"
+                        className={`px-4 py-2 rounded-md flex items-center justify-center ${selectedSportType === "table-tennis"
                             ? "bg-blue-600 text-white"
                             : "bg-gray-700 text-gray-300 hover:bg-gray-600"
                             }`}
                         disabled={isLoadingFiles || isUploading}
                     >
-                        Table Tennis
+                        <span>Table Tennis</span>
+                        {isTableLoading && selectedSportType === "table-tennis" && (
+                            <span className="ml-2 inline-block">
+                                <div className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent"></div>
+                            </span>
+                        )}
                     </button>
                 </div>
             </div>
@@ -607,7 +701,7 @@ const BettingPredictionsTable: React.FC = () => {
                         value={selectedDate}
                         onChange={(e) => handleDateChange(e.target.value)}
                         className="block w-full sm:w-auto md:w-64 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                        disabled={isLoadingFiles || isUploading}
+                        disabled={isLoadingFiles || isUploading || isTableLoading}
                     >
                         <option value="">All Dates</option>
                         {availableDates.map((date) => (
@@ -616,7 +710,6 @@ const BettingPredictionsTable: React.FC = () => {
                     </select>
                 </div>
             )}
-
             {/* Data summary when we have a lot of data */}
             {filteredPredictions.length > ITEMS_PER_PAGE && (
                 <div className="mb-4 p-3 bg-gray-700 rounded-lg text-gray-200 flex justify-between">
@@ -636,7 +729,15 @@ const BettingPredictionsTable: React.FC = () => {
             )}
 
             <div className="overflow-x-auto w-full">
-                {displayedPredictions && displayedPredictions.length > 0 ? (
+                {isTableLoading ? (
+                    <div className="flex flex-col items-center justify-center py-20 border border-gray-700 bg-gray-800 bg-opacity-60 rounded-lg">
+                        <div className="animate-spin h-16 w-16 border-4 border-blue-400 rounded-full border-t-transparent mb-6"></div>
+                        <p className="text-blue-300 font-medium text-xl mb-2">Loading predictions data...</p>
+                        {loadingStatus && (
+                            <p className="text-gray-400 text-sm mt-2">{loadingStatus}</p>
+                        )}
+                    </div>
+                ) : displayedPredictions && displayedPredictions.length > 0 ? (
                     <>
                         {/* Desktop Table - Hidden on small screens */}
                         <div className="hidden md:block w-full">
