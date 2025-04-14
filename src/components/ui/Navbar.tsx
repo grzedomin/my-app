@@ -18,6 +18,12 @@ const Navbar = () => {
     // Don't show dashboard link on dashboard page
     const isDashboard = pathname === "/dashboard" || pathname?.startsWith("/dashboard/");
 
+    // Don't show the navbar at all on admin pages
+    const isAdminPage = pathname === "/admin" || pathname?.startsWith("/admin/");
+
+    // Don't render the navbar at all on admin pages
+    if (isAdminPage) return null;
+
     const handleLogout = async () => {
         try {
             await logout();
