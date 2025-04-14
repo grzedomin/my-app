@@ -147,7 +147,7 @@ const BettingPredictionsTable: React.FC = () => {
         apiMatchScores,
         apiMatchSetScores,
         findBestPlayerMatch
-    } = useMatchesByDate(selectedDate, predictions);
+    } = useMatchesByDate(selectedDate, predictions, selectedSportType);
 
     // Show error message when fetching matches fails
     useEffect(() => {

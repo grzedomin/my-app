@@ -36,6 +36,7 @@ interface CachedApiData {
     data: ApiResponse[];
     timestamp: number;
     formattedDate: string;
+    sportType: string;
 }
 
 interface BettingPrediction {
@@ -53,23 +54,82 @@ interface BettingPrediction {
 
 // Cache settings
 const CACHE_EXPIRATION_TIME = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
-const CACHE_KEY_PREFIX = "tennis_matches_";
+const CACHE_KEY_PREFIX = "matches_"; // Generic prefix for all matches
+const OLD_TENNIS_KEY_PREFIX = "tennis_matches_"; // Old prefix for backward compatibility
 
-// Function to get cache key for a specific date
-const getCacheKey = (formattedDate: string): string => {
-    return `${CACHE_KEY_PREFIX}${formattedDate}`;
+// Function to migrate old cache format to new format (one-time migration)
+const migrateOldCache = (): void => {
+    try {
+        // Check if migration has already been done
+        if (localStorage.getItem("cache_migration_done") === "true") {
+            return;
+        }
+
+        console.log("Starting cache migration from old format to new format...");
+        // Get all keys
+        const keysToMigrate = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith(OLD_TENNIS_KEY_PREFIX)) {
+                keysToMigrate.push(key);
+            }
+        }
+
+        if (keysToMigrate.length === 0) {
+            console.log("No old cache entries to migrate");
+            localStorage.setItem("cache_migration_done", "true");
+            return;
+        }
+
+        // Migrate each old key
+        keysToMigrate.forEach(oldKey => {
+            try {
+                const cachedDataString = localStorage.getItem(oldKey);
+                if (cachedDataString) {
+                    const cachedData = JSON.parse(cachedDataString);
+
+                    // Add sport type to the cached data
+                    cachedData.sportType = "tennis";
+
+                    // Extract date from old key
+                    const dateStr = oldKey.replace(OLD_TENNIS_KEY_PREFIX, "");
+
+                    // Save to new format
+                    const newKey = getCacheKey("tennis", dateStr);
+                    localStorage.setItem(newKey, JSON.stringify(cachedData));
+
+                    // Remove old entry
+                    localStorage.removeItem(oldKey);
+                    console.log(`Migrated cache: ${oldKey} -> ${newKey}`);
+                }
+            } catch (error) {
+                console.error(`Error migrating cache entry ${oldKey}:`, error);
+            }
+        });
+
+        localStorage.setItem("cache_migration_done", "true");
+        console.log("Cache migration completed");
+    } catch (error) {
+        console.error("Error during cache migration:", error);
+    }
+};
+
+// Function to get cache key for a specific date and sport type
+const getCacheKey = (sportType: string, formattedDate: string): string => {
+    return `${CACHE_KEY_PREFIX}${sportType}_${formattedDate}`;
 };
 
 // Function to save data to cache
-const saveToCache = (formattedDate: string, data: ApiResponse[]): void => {
+const saveToCache = (sportType: string, formattedDate: string, data: ApiResponse[]): void => {
     try {
         const cacheData: CachedApiData = {
             data,
             timestamp: Date.now(),
-            formattedDate
+            formattedDate,
+            sportType
         };
-        localStorage.setItem(getCacheKey(formattedDate), JSON.stringify(cacheData));
-        console.log(`Saved match data to cache for date: ${formattedDate}`);
+        localStorage.setItem(getCacheKey(sportType, formattedDate), JSON.stringify(cacheData));
+        console.log(`Saved ${sportType} match data to cache for date: ${formattedDate}`);
     } catch (error) {
         console.error("Error saving to cache:", error);
         // If there's an error (e.g., localStorage is full), try to clear old caches
@@ -78,21 +138,21 @@ const saveToCache = (formattedDate: string, data: ApiResponse[]): void => {
 };
 
 // Function to get data from cache
-const getFromCache = (formattedDate: string): ApiResponse[] | null => {
+const getFromCache = (sportType: string, formattedDate: string): ApiResponse[] | null => {
     try {
-        const cachedDataString = localStorage.getItem(getCacheKey(formattedDate));
+        const cachedDataString = localStorage.getItem(getCacheKey(sportType, formattedDate));
         if (!cachedDataString) return null;
 
         const cachedData: CachedApiData = JSON.parse(cachedDataString);
 
         // Check if cache is expired
         if (Date.now() - cachedData.timestamp > CACHE_EXPIRATION_TIME) {
-            console.log(`Cache for ${formattedDate} is expired, removing...`);
-            localStorage.removeItem(getCacheKey(formattedDate));
+            console.log(`Cache for ${formattedDate} (${sportType}) is expired, removing...`);
+            localStorage.removeItem(getCacheKey(sportType, formattedDate));
             return null;
         }
 
-        console.log(`Using cached match data for date: ${formattedDate}`);
+        console.log(`Using cached ${sportType} match data for date: ${formattedDate}`);
         return cachedData.data;
     } catch (error) {
         console.error("Error reading from cache:", error);
@@ -106,7 +166,8 @@ const clearOldCaches = (): void => {
         // Get all keys
         for (let i = 0; i < localStorage.length; i++) {
             const key = localStorage.key(i);
-            if (key && key.startsWith(CACHE_KEY_PREFIX)) {
+            if ((key && key.startsWith(CACHE_KEY_PREFIX)) ||
+                (key && key.startsWith(OLD_TENNIS_KEY_PREFIX))) {
                 try {
                     const cachedDataString = localStorage.getItem(key);
                     if (cachedDataString) {
@@ -182,11 +243,12 @@ interface MatchesByDateResult {
 }
 
 /**
- * Custom hook to fetch and process tennis matches by date
+ * Custom hook to fetch and process tennis and table tennis matches by date
  */
 export const useMatchesByDate = (
     selectedDate: string,
-    predictions: BettingPrediction[]
+    predictions: BettingPrediction[],
+    sportType: string = "tennis" // Default to tennis if not specified
 ): MatchesByDateResult => {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -194,6 +256,11 @@ export const useMatchesByDate = (
     const [apiMatchScores, setApiMatchScores] = useState<Map<string, string>>(new Map());
     const [apiMatchSetScores, setApiMatchSetScores] = useState<Map<string, { homeTeam: { set1: number; set2: number; }; awayTeam: { set1: number; set2: number; }; }>>(new Map());
     const [bestMatchFinder, setBestMatchFinder] = useState<(excelName: string) => string>(() => (name: string) => name);
+
+    // Migrate old cache format on first render
+    useEffect(() => {
+        migrateOldCache();
+    }, []);
 
     // Function to convert date format from "10th Apr 2025" to "2025-04-10"
     const convertDateFormat = (dateStr: string): string => {
@@ -428,8 +495,8 @@ export const useMatchesByDate = (
                 // Convert the date format for API call
                 const formattedDate = convertDateFormat(selectedDate);
 
-                // Check if we have cached data for this date
-                const cachedData = getFromCache(formattedDate);
+                // Check if we have cached data for this date and sport type
+                const cachedData = getFromCache(sportType, formattedDate);
 
                 if (cachedData) {
                     // Use cached data
@@ -443,7 +510,7 @@ export const useMatchesByDate = (
                     }
                 } else {
                     // No cached data, fetch from API
-                    console.log(`Fetching match data from API for date: ${formattedDate}`);
+                    console.log(`Fetching ${sportType} match data from API for date: ${formattedDate}`);
 
                     // Use the formatted date for the API call
                     const data = await fetch(`https://tennis.sportdevs.com/matches-by-date?date=eq.${formattedDate}`, {
@@ -455,7 +522,7 @@ export const useMatchesByDate = (
                     const json = await data.json() as ApiResponse[];
 
                     // Save to cache for future use
-                    saveToCache(formattedDate, json);
+                    saveToCache(sportType, formattedDate, json);
 
                     // Handle no matches case
                     if (!json[0] || !json[0].matches) {
@@ -470,15 +537,15 @@ export const useMatchesByDate = (
                     processApiData(json[0].matches);
                 }
             } catch (err) {
-                console.error("Error fetching tennis matches:", err);
-                setError("Failed to fetch tennis matches. Please try again later.");
+                console.error(`Error fetching ${sportType} matches:`, err);
+                setError(`Failed to fetch ${sportType} matches. Please try again later.`);
             } finally {
                 setIsLoading(false);
             }
         };
 
         fetchData();
-    }, [selectedDate, predictions]);
+    }, [selectedDate, predictions, sportType]);
 
     return {
         isLoading,
