@@ -4,7 +4,6 @@ import { useNotification } from "@/context/NotificationContext";
 import {
     uploadMultipleFiles,
     getAllFiles,
-    FileData,
     cleanupOrphanedFiles,
     fetchExcelFile,
     getFilesByDate,
@@ -15,19 +14,7 @@ import { FirebaseError } from "firebase/app";
 import * as XLSX from "xlsx";
 import AdminOnly from "@/components/AdminOnly";
 import { useSearchParams } from "next/navigation";
-
-interface BettingPrediction {
-    date: string;
-    team1: string;
-    oddTeam1: number;
-    team2: string;
-    oddTeam2: number;
-    scorePrediction: string;
-    confidence: number;
-    bettingPredictionTeam1Win: number;
-    bettingPredictionTeam2Win: number;
-    finalScore: string;
-}
+import { BettingPrediction, FileData } from "@/types";
 
 interface AdminExcelPanelProps {
     onFileProcessed: (data: BettingPrediction[]) => void;

@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { PieChart } from "react-minimal-pie-chart";
 import * as XLSX from "xlsx";
 import { useNotification } from "@/context/NotificationContext";
-import { getAllFiles, FileData, fetchExcelFile, getFilesByDate, getFilesBySportType } from "@/lib/storage";
-import AdminExcelPanel from "@/components/admin/AdminExcelPanel";
+import { getAllFiles, fetchExcelFile, getFilesByDate, getFilesBySportType } from "@/lib/storage";
 import { useSearchParams } from "next/navigation";
 import { useMatchesByDate } from "@/hooks/useMatchesByDate";
+import { FileData } from "@/types";
 
 // Spinner components for loading states
 const TableSpinner = () => (
@@ -567,16 +567,6 @@ const BettingPredictionsTable: React.FC = () => {
 
     return (
         <div className="w-full">
-            {/* Admin Excel Management Panel */}
-            <AdminExcelPanel
-                onFileProcessed={setPredictions}
-                isUploading={isUploading}
-                setIsUploading={setIsUploading}
-                isLoadingFiles={isLoadingFiles}
-                setIsLoadingFiles={setIsLoadingFiles}
-                selectedSportType={selectedSportType}
-            />
-
             {/* Sport Type Filter */}
             <div className="mb-4 sm:mb-6">
                 <h3 className="block text-sm font-medium text-gray-300 mb-2">

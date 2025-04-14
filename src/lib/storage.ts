@@ -3,20 +3,7 @@ import { storage, db } from "./firebase";
 import { doc, setDoc, collection, getDocs, query, orderBy, deleteDoc, getDoc, where } from "firebase/firestore";
 import { v4 as uuidv4 } from "uuid";
 import * as XLSX from "xlsx";
-
-export interface FileData {
-    id: string;
-    fileName: string;
-    filePath: string;
-    downloadUrl: string;
-    contentType: string;
-    uploadDate: number;
-    userId: string;
-    size: number;
-    isPublic?: boolean;
-    fileDate?: string; // Date extracted from Excel file content
-    sportType?: string; // Tennis or Table Tennis
-}
+import { FileData } from "@/types";
 
 // Extract date from Excel file
 export const extractDateFromExcel = async (file: File): Promise<string | null> => {

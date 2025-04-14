@@ -4,7 +4,6 @@ import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 import BettingPredictionsTable from "@/components/ui/BettingPredictionsTable";
-import AdminOnly from "@/components/AdminOnly";
 
 export default function Dashboard() {
     const { user } = useAuth();
@@ -54,18 +53,8 @@ export default function Dashboard() {
                 <div className="bg-gray-800 rounded-lg shadow-xl p-4 sm:p-6 border border-gray-700">
                     <div className="mb-4 sm:mb-6">
                         <h2 className="text-xl sm:text-2xl font-bold flex flex-col sm:flex-row sm:items-center gap-2 text-white">
-                            Welcome to your Dashboard
-                            <AdminOnly>
-                                <span className="inline-block text-sm bg-blue-900 text-blue-100 py-1 px-2 rounded-full">
-                                    Admin Access
-                                </span>
-                            </AdminOnly>
+                            Score predictions
                         </h2>
-                    </div>
-
-                    {/* User Info */}
-                    <div className="mb-4 sm:mb-6 text-gray-300">
-                        <p>Signed in as: <span className="font-medium text-blue-300">{user.email}</span></p>
                     </div>
 
                     {/* Betting Predictions Table */}
