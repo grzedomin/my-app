@@ -57,6 +57,8 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
     // Confirmation modal state
     const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
     const [fileToDelete, setFileToDelete] = useState<{ id: string, name: string } | null>(null);
+    // Add a state for tracking delete operation loading
+    const [isDeleting, setIsDeleting] = useState(false);
 
     // Get default sport type from URL params or props for viewing - but we won't use this for filtering
     const [viewSportType, setViewSportType] = useState<string>("all");
@@ -482,6 +484,7 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
         if (!fileToDelete?.id) return;
 
         try {
+            setIsDeleting(true);
             setIsLoadingFiles(true);
             await deleteFile(fileToDelete.id);
             showNotification(`File deleted: ${fileToDelete.name}`, "success");
@@ -494,6 +497,7 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
             console.error("Error deleting file:", error);
             showNotification(`Failed to delete file: ${fileToDelete.name}`, "error");
         } finally {
+            setIsDeleting(false);
             setIsLoadingFiles(false);
         }
     }, [fileToDelete, setIsLoadingFiles, showNotification, fetchSavedFiles]);
@@ -689,16 +693,28 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
                                     onClick={cancelDeleteFile}
                                     className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     aria-label="Cancel deletion"
+                                    disabled={isDeleting}
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="button"
                                     onClick={confirmDeleteFile}
-                                    className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                                    className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-red-500 flex items-center justify-center"
                                     aria-label="Confirm deletion"
+                                    disabled={isDeleting}
                                 >
-                                    Delete
+                                    {isDeleting ? (
+                                        <>
+                                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                            Loading
+                                        </>
+                                    ) : (
+                                        "Delete"
+                                    )}
                                 </button>
                             </div>
                         </div>

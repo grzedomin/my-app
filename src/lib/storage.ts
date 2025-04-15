@@ -392,9 +392,68 @@ export const deleteFile = async (fileId: string): Promise<void> => {
             // This helps clean up orphaned records
         }
 
-        // Delete from Firestore
+        // Delete from processed-files collection
+        try {
+            await deleteDoc(doc(db, "processed-files", fileId));
+            console.log("File metadata deleted from processed-files collection:", fileId);
+        } catch (processedFilesError) {
+            console.error("Error deleting from processed-files collection:", processedFilesError);
+            // Continue even if this fails
+        }
+
+        // Determine which sport collection to clean up
+        const sportType = fileData.sportType?.toLowerCase().trim() || "tennis";
+        const collectionName = sportType === "table-tennis" ? "table-tennis" : "tennis";
+
+        // Delete associated records from the sport collection
+        try {
+            // Query for all records with this fileId
+            const sportRecordsQuery = query(
+                collection(db, collectionName),
+                where("fileId", "==", fileId)
+            );
+
+            // If fileId is not available, try to query by sourceFile
+            const sourceFileQuery = query(
+                collection(db, collectionName),
+                where("sourceFile", "==", fileData.filePath)
+            );
+
+            // Execute both queries and combine the results
+            const [sportRecordsSnapshot, sourceFileSnapshot] = await Promise.all([
+                getDocs(sportRecordsQuery),
+                getDocs(sourceFileQuery)
+            ]);
+
+            // Create a Set to track unique document IDs (to avoid duplicates)
+            const docsToDelete = new Set<string>();
+
+            // Process results from the fileId query
+            sportRecordsSnapshot.forEach((doc) => {
+                docsToDelete.add(doc.id);
+            });
+
+            // Process results from the sourceFile query
+            sourceFileSnapshot.forEach((doc) => {
+                docsToDelete.add(doc.id);
+            });
+
+            // Delete all the matched documents
+            const deletePromises: Promise<void>[] = [];
+            docsToDelete.forEach((docId) => {
+                deletePromises.push(deleteDoc(doc(db, collectionName, docId)));
+            });
+
+            await Promise.all(deletePromises);
+            console.log(`Deleted ${docsToDelete.size} records from ${collectionName} collection`);
+        } catch (sportRecordsError) {
+            console.error(`Error deleting records from ${collectionName} collection:`, sportRecordsError);
+            // Continue even if this fails
+        }
+
+        // Delete from files collection
         await deleteDoc(doc(db, "files", fileId));
-        console.log("File metadata successfully deleted from Firestore:", fileId);
+        console.log("File metadata successfully deleted from files collection:", fileId);
     } catch (error) {
         console.error("Error in deleteFile:", error);
         throw error;
