@@ -160,6 +160,10 @@ export const migrateExcelFilesToFirestore = async (
                         processedAt: Timestamp.now()
                     });
 
+                    // Determine the appropriate collection based on sport type
+                    const sportType = file.sportType?.toLowerCase().trim() || "tennis";
+                    const collectionName = sportType === "table-tennis" ? "table-tennis" : "tennis";
+
                     // Split into multiple smaller batches (Firestore batch limit is 500)
                     const BATCH_SIZE = 100; // Use smaller batches to avoid issues
                     for (let j = 0; j < predictions.length; j += BATCH_SIZE) {
@@ -167,7 +171,7 @@ export const migrateExcelFilesToFirestore = async (
 
                         const currentBatch = writeBatch(db);
                         batchChunk.forEach((prediction, index) => {
-                            const predictionRef = doc(collection(db, "predictions"));
+                            const predictionRef = doc(collection(db, collectionName));
                             currentBatch.set(predictionRef, {
                                 ...prediction,
                                 rowIndex: j + index

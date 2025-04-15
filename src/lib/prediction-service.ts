@@ -1,5 +1,5 @@
 import { db } from "./firebase";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { collection, query, getDocs } from "firebase/firestore";
 
 export interface BettingPrediction {
     date: string;
@@ -19,14 +19,28 @@ export interface BettingPrediction {
 }
 
 /**
+ * Get collection name based on sport type
+ */
+const getSportCollection = (sportType: string): string => {
+    // Normalize sport type to ensure consistency
+    const normalizedType = sportType.toLowerCase().trim();
+
+    // Map sport type to collection name
+    if (normalizedType === "table-tennis" || normalizedType === "table tennis") {
+        return "table-tennis";
+    }
+
+    // Default to tennis for any other value
+    return "tennis";
+};
+
+/**
  * Get unique dates for predictions of a specific sport type
  */
 export const getPredictionDates = async (sportType: string): Promise<string[]> => {
     try {
-        const q = query(
-            collection(db, "predictions"),
-            where("sportType", "==", sportType)
-        );
+        const collectionName = getSportCollection(sportType);
+        const q = query(collection(db, collectionName));
 
         const querySnapshot = await getDocs(q);
 
@@ -60,18 +74,12 @@ export const getPredictionDates = async (sportType: string): Promise<string[]> =
             }
         });
 
-        // Convert to array and sort (most recent dates first)
+        // Convert set to array and sort dates in descending order (most recent first)
         return Array.from(uniqueDates).sort((a, b) => {
-            // Parse dates for proper comparison
-            const dateA = parseCustomDate(a);
-            const dateB = parseCustomDate(b);
-
-            if (dateA && dateB) {
-                return dateB.getTime() - dateA.getTime();
-            }
-
-            // Fallback to string comparison if parsing fails
-            return b.localeCompare(a);
+            // Convert date strings to comparable values for sorting
+            const dateA = new Date(a.replace(/(\d+)(?:st|nd|rd|th)/, "$1"));
+            const dateB = new Date(b.replace(/(\d+)(?:st|nd|rd|th)/, "$1"));
+            return dateB.getTime() - dateA.getTime();
         });
     } catch (error) {
         console.error("Error fetching prediction dates:", error);
@@ -80,54 +88,12 @@ export const getPredictionDates = async (sportType: string): Promise<string[]> =
 };
 
 /**
- * Helper function to parse dates in the format "10th Apr 2025"
- */
-const parseCustomDate = (dateStr: string): Date | null => {
-    try {
-        const match = dateStr.match(/(\d+)(?:st|nd|rd|th)\s+([A-Za-z]+)\s+(\d{4})/);
-        if (!match) return null;
-
-        const day = parseInt(match[1], 10);
-        const month = getMonthIndex(match[2]);
-        const year = parseInt(match[3], 10);
-
-        if (isNaN(day) || month === -1 || isNaN(year)) return null;
-
-        return new Date(year, month, day);
-    } catch (e) {
-        console.error("Error parsing date:", e);
-        return null;
-    }
-};
-
-/**
- * Helper function to get month index from name
- */
-const getMonthIndex = (monthName: string): number => {
-    const months = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
-    ];
-
-    // Look for the month abbreviation in the list
-    for (let i = 0; i < months.length; i++) {
-        if (monthName.startsWith(months[i])) {
-            return i;
-        }
-    }
-
-    return -1; // Not found
-};
-
-/**
  * Get predictions by sport type
  */
 export const getPredictionsBySportType = async (sportType: string): Promise<BettingPrediction[]> => {
     try {
-        const q = query(
-            collection(db, "predictions"),
-            where("sportType", "==", sportType)
-        );
+        const collectionName = getSportCollection(sportType);
+        const q = query(collection(db, collectionName));
 
         const querySnapshot = await getDocs(q);
         const predictions: BettingPrediction[] = [];
@@ -166,17 +132,12 @@ export const getPredictionsBySportType = async (sportType: string): Promise<Bett
 export const getPredictionsByDate = async (date: string, sportType: string): Promise<BettingPrediction[]> => {
     try {
         // Get all predictions for this sport type
-        const q = query(
-            collection(db, "predictions"),
-            where("sportType", "==", sportType)
-        );
+        const collectionName = getSportCollection(sportType);
+        const q = query(collection(db, collectionName));
 
         const querySnapshot = await getDocs(q);
         const predictions: BettingPrediction[] = [];
         const teamPairs = new Set<string>(); // Track unique team pairs to avoid duplicates
-
-        // Check if our date is a tournament name
-        const isDateFormat = /^\d+(?:st|nd|rd|th)\s+[A-Za-z]+\s+\d{4}$/.test(date);
 
         // Filter predictions based on the date pattern
         querySnapshot.forEach((doc) => {
@@ -189,45 +150,26 @@ export const getPredictionsByDate = async (date: string, sportType: string): Pro
                 return;
             }
 
-            if (prediction.date) {
-                let shouldInclude = false;
+            // Match by date:
+            // 1. Check if the prediction's date contains our target date
+            // 2. Or check if standardDate matches exactly
+            const dateMatches =
+                (prediction.date && prediction.date.includes(date)) ||
+                (prediction.standardDate && prediction.standardDate === date);
 
-                if (isDateFormat) {
-                    // If we're filtering by a standard date format
-                    // Extract the date pattern like "10th Apr 2025"
-                    const dateMatch = prediction.date.match(/(\d+(?:st|nd|rd|th)\s+[A-Za-z]+\s+\d{4})/);
-                    const extractedDate = dateMatch && dateMatch[1] ? dateMatch[1].trim() : null;
+            if (dateMatches) {
+                // Create a unique key based on both team names to identify duplicates
+                const teamKey = `${prediction.team1.toLowerCase()}-${prediction.team2.toLowerCase()}`;
 
-                    shouldInclude = (
-                        (extractedDate && extractedDate === date) ||
-                        (prediction.standardDate && prediction.standardDate === date) ||
-                        // If date has time component, check if the date part matches
-                        (prediction.date.includes(date))
-                    );
-                } else {
-                    // If we're filtering by what might be a tournament name
-                    // Case-insensitive includes check in both directions
-                    shouldInclude = (
-                        prediction.date.toLowerCase().includes(date.toLowerCase()) ||
-                        date.toLowerCase().includes(prediction.date.toLowerCase())
-                    );
-                }
-
-                if (shouldInclude) {
-                    // Create a unique key based on both team names to identify duplicates
-                    const teamKey = `${prediction.team1.toLowerCase()}-${prediction.team2.toLowerCase()}`;
-
-                    // Only add if we haven't seen this team pair before
-                    if (!teamPairs.has(teamKey)) {
-                        teamPairs.add(teamKey);
-                        predictions.push(prediction);
-                    }
+                // Only add if we haven't seen this team pair before
+                if (!teamPairs.has(teamKey)) {
+                    teamPairs.add(teamKey);
+                    predictions.push(prediction);
                 }
             }
         });
 
-        // Sort predictions by team names for consistency
-        return predictions.sort((a, b) => a.team1.localeCompare(b.team1));
+        return predictions;
     } catch (error) {
         console.error("Error fetching predictions by date:", error);
         throw error;

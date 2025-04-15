@@ -336,6 +336,10 @@ export const processExcelFile = functionsV1.storage.object().onFinalize(async (o
 
             console.log(`Saved file info to Firestore: processed-files/${fileId}`);
 
+            // Determine the appropriate collection based on sport type
+            const normalizedSportType = typeof sportType === "string" ? sportType.toLowerCase().trim() : "tennis";
+            const collectionName = normalizedSportType === "table-tennis" ? "table-tennis" : "tennis";
+
             // Use multiple smaller batches to stay within limits
             const BATCH_SIZE = 100; // Smaller batch size to avoid timeouts
             let successCount = 0;
@@ -346,7 +350,7 @@ export const processExcelFile = functionsV1.storage.object().onFinalize(async (o
                     const batchPredictions = predictions.slice(i, i + BATCH_SIZE);
 
                     batchPredictions.forEach((prediction, index) => {
-                        const docRef = admin.firestore().collection("predictions").doc();
+                        const docRef = admin.firestore().collection(collectionName).doc();
                         batch.set(docRef, {
                             ...prediction,
                             fileId: fileRef.id,

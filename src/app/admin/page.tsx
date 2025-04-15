@@ -2,63 +2,24 @@
 
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import Link from "next/link";
 import { useRoleCheck } from "@/hooks/useRoleCheck";
-import { migrateExcelFilesToFirestore } from "@/lib/migrate-excel-data";
-import { useNotification } from "@/context/NotificationContext";
 
 export default function AdminDashboard() {
     const { user } = useAuth();
     const router = useRouter();
     const { isAuthorized } = useRoleCheck("admin");
-    const { showNotification } = useNotification();
 
     // Migration state
-    const [isMigrating, setIsMigrating] = useState(false);
-    const [migrationProgress, setMigrationProgress] = useState("");
-    const [migrationPercent, setMigrationPercent] = useState(0);
 
     useEffect(() => {
+
         // If user is not logged in, redirect to signin
         if (!user) {
             router.push("/auth/signin");
         }
     }, [user, router]);
-
-    const handleMigrateData = async () => {
-        if (isMigrating) return;
-
-        if (!confirm("This will migrate all Excel data to Firestore for faster dashboard loading. Continue?")) {
-            return;
-        }
-
-        setIsMigrating(true);
-        setMigrationProgress("Starting migration...");
-        setMigrationPercent(0);
-
-        try {
-            const result = await migrateExcelFilesToFirestore((message, percentage) => {
-                setMigrationProgress(message);
-                if (percentage !== undefined) {
-                    setMigrationPercent(percentage);
-                }
-            });
-
-            if (result.success) {
-                showNotification(`Migration completed: ${result.message}`, "success");
-            } else {
-                showNotification(`Migration failed: ${result.message}`, "error");
-            }
-        } catch (error: unknown) {
-            console.error("Migration failed:", error);
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            setMigrationProgress(`Migration failed: ${errorMessage}`);
-            showNotification("Data migration failed", "error");
-        } finally {
-            setIsMigrating(false);
-        }
-    };
 
     // If not authorized, show loading or nothing while redirecting
     if (!isAuthorized) return null;
@@ -144,49 +105,6 @@ export default function AdminDashboard() {
                                         Manage Files
                                     </Link>
                                 </div>
-                            </div>
-                        </div>
-
-                        {/* Data Migration Card */}
-                        <div className="bg-gray-800 overflow-hidden shadow rounded-lg border border-gray-700">
-                            <div className="px-4 py-5 sm:p-6">
-                                <div className="flex items-center">
-                                    <div className="flex-shrink-0 bg-green-600 rounded-md p-3">
-                                        <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
-                                        </svg>
-                                    </div>
-                                    <div className="ml-5 w-0 flex-1">
-                                        <dt className="text-lg font-medium text-white">Excel Data Migration</dt>
-                                        <dd className="mt-2 text-sm text-gray-400">
-                                            Move Excel data to Firestore for faster dashboard loading
-                                        </dd>
-                                    </div>
-                                </div>
-
-                                {isMigrating ? (
-                                    <div className="mt-5">
-                                        <div className="w-full bg-gray-700 rounded-full h-2.5">
-                                            <div
-                                                className="bg-green-600 h-2.5 rounded-full"
-                                                style={{ width: `${migrationPercent}%` }}
-                                            ></div>
-                                        </div>
-                                        <p className="mt-2 text-sm text-gray-300">{migrationProgress}</p>
-                                    </div>
-                                ) : (
-                                    <div className="mt-5">
-                                        <button
-                                            onClick={handleMigrateData}
-                                            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-                                        >
-                                            Migrate Excel Data
-                                        </button>
-                                        {migrationProgress && (
-                                            <p className="mt-2 text-sm text-gray-300">{migrationProgress}</p>
-                                        )}
-                                    </div>
-                                )}
                             </div>
                         </div>
                     </div>

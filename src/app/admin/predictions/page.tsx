@@ -6,6 +6,8 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useRoleCheck } from "@/hooks/useRoleCheck";
 import BettingPredictionsTable from "@/components/ui/BettingPredictionsTable";
+import AdminOnly from "@/components/AdminOnly";
+import MigratePredictionsPanel from "@/components/admin/MigratePredictionsPanel";
 
 export default function PredictionsManagement() {
     const { user, loading } = useAuth();
@@ -55,6 +57,9 @@ export default function PredictionsManagement() {
             <main className="max-w-[90%] mx-auto py-6 sm:px-4 lg:px-8">
                 <div className="px-2 py-6 sm:px-0">
                     <h2 className="text-2xl font-bold mb-6">Betting Predictions Management</h2>
+
+                    {/* Migration tool section */}
+                    <MigratePredictionsPanel />
 
                     <div className="bg-gray-800 shadow overflow-hidden sm:rounded-lg mb-8 border border-gray-700">
                         <div className="px-4 py-5 sm:px-6">
