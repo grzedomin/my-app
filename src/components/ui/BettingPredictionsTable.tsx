@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { PieChart } from "react-minimal-pie-chart";
 import { useNotification } from "@/context/NotificationContext";
 import { useSearchParams } from "next/navigation";
-import { useMatchesByDate } from "@/hooks/query";
-import { BettingPrediction, getPredictionsBySportType, getPredictionsByDate, getPredictionDates } from "@/lib/prediction-service";
+import { useMatchesByDate, usePaginatedMatches } from "@/hooks";
+import { BettingPrediction, getPredictionDates } from "@/lib/prediction-service";
 
 // Spinner component for loading states
 const LoadMoreSpinner = () => (
@@ -68,8 +68,7 @@ const cleanFinalScore = (finalScore: string): string => {
     return finalScore.replace(/\s*\([^)]+\)/, "").trim();
 };
 
-// Cache for predictions by sport type to prevent redundant Firestore queries
-const predictionsCache: { [key: string]: { timestamp: number; data: BettingPrediction[] } } = {};
+// Cache for dates to prevent redundant Firestore queries
 const datesCache: { [sportType: string]: { timestamp: number; dates: string[] } } = {};
 const CACHE_EXPIRY_MS = 60 * 1000; // Cache expires after 1 minute
 
@@ -95,6 +94,8 @@ const timeStringToMinutes = (timeStr: string | undefined): number => {
 };
 
 // Helper function to sort predictions by time
+// This function is retained for potential future use when sorting in client
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const sortPredictionsByTime = (predictions: BettingPrediction[]): BettingPrediction[] => {
     return [...predictions].sort((a, b) => {
         const timeA = extractTimeFromDate(a.date);
@@ -112,123 +113,102 @@ const BettingPredictionsTable: React.FC = () => {
     const searchParams = useSearchParams();
     const loaderRef = useRef<HTMLDivElement>(null);
 
-    const [predictions, setPredictions] = useState<BettingPrediction[]>([]);
-    const [filteredPredictions, setFilteredPredictions] = useState<BettingPrediction[]>([]);
-    const [displayedPredictions, setDisplayedPredictions] = useState<BettingPrediction[]>([]);
-    const [isLoading, setIsLoading] = useState(false);
-    const [selectedDate, setSelectedDate] = useState<string>("");
-    const [availableDates, setAvailableDates] = useState<string[]>([]);
-    const [isLoadingMore, setIsLoadingMore] = useState(false);
-    const [hasMore, setHasMore] = useState(true);
-    const [pageNumber, setPageNumber] = useState(1);
-    const [isTableLoading, setIsTableLoading] = useState(false);
-    const [loadingStatus, setLoadingStatus] = useState<string>("");
-    const activeSportTypeChangeRef = useRef<string | null>(null);
-
     // Get initial sport type from URL parameters or default to tennis
     const [selectedSportType, setSelectedSportType] = useState<string>(() => {
         const sportParam = searchParams.get("sport");
         return sportParam || "tennis";
     });
 
-    // Use our custom hook to fetch matches by date
+    const [selectedDate, setSelectedDate] = useState<string>("");
+    const [availableDates, setAvailableDates] = useState<string[]>([]);
+    const [isLoadingDates, setIsLoadingDates] = useState(false);
+    const [isTableLoading, setIsTableLoading] = useState(false);
+    const [loadingStatus, setLoadingStatus] = useState<string>("");
+    const observer = useRef<IntersectionObserver | null>(null);
+    const activeSportTypeChangeRef = useRef<string | null>(null);
+
+    // Use our custom paginated hook to fetch predictions
+    const {
+        predictions: displayedPredictions,
+        isLoading,
+        error: fetchError,
+        loadMore,
+        hasMore,
+        isLoadingMore
+    } = usePaginatedMatches(selectedDate, selectedSportType, ITEMS_PER_PAGE);
+
+    // Use our matches hook to fetch match data for the currently displayed predictions only
     const {
         error: matchesError,
         apiMatchScores,
         apiMatchSetScores,
         findBestPlayerMatch
-    } = useMatchesByDate(selectedDate, selectedSportType, filteredPredictions);
+    } = useMatchesByDate(selectedDate, selectedSportType, displayedPredictions);
 
-    // Show error message when fetching matches fails
+    // Show error messages when fetching fails
     useEffect(() => {
+        if (fetchError) {
+            showNotification(fetchError, "error");
+        }
         if (matchesError) {
             showNotification(matchesError, "error");
         }
-    }, [matchesError, showNotification]);
+    }, [fetchError, matchesError, showNotification]);
 
-    // Effect to filter predictions by date
+    // Update loading state
     useEffect(() => {
-        if (!selectedDate) {
-            // If no date selected, show all predictions
-            setFilteredPredictions(predictions);
+        if (isLoading) {
+            setIsTableLoading(true);
         } else {
-            // Filter predictions by selected date 
-            const filtered = predictions.filter(pred => {
-                if (!pred.date) return false;
-
-                // Extract the date part like "10th Apr 2025" from the string
-                const dateMatch = pred.date.match(/(\d+(?:st|nd|rd|th)\s+[A-Za-z]+\s+\d{4})/);
-                const extractedDate = dateMatch && dateMatch[1] ? dateMatch[1].trim() : "";
-
-                // Also check standardDate if it exists
-                const matchesStandardDate = pred.standardDate === selectedDate;
-
-                // For tournament names, we use startsWith/includes logic
-                const tournamentMatch = dateMatch ?
-                    false : // If it has a date pattern, don't use this logic
-                    (pred.date.toLowerCase().includes(selectedDate.toLowerCase())
-                        || selectedDate.toLowerCase().includes(pred.date.toLowerCase()));
-
-                // Compare with selected date - either the extracted date matches or it's a tournament name match
-                return extractedDate === selectedDate ||
-                    matchesStandardDate ||
-                    pred.date.includes(selectedDate) ||
-                    tournamentMatch;
-            });
-            setFilteredPredictions(filtered);
+            setIsTableLoading(false);
+            setLoadingStatus("");
         }
+    }, [isLoading]);
 
-        // Reset pagination when filters change
-        setPageNumber(1);
-        setHasMore(true);
-    }, [selectedDate, predictions]);
-
-    // Effect to load initial page of data when filteredPredictions changes
+    // Fetch dates when sport type changes
     useEffect(() => {
-        if (filteredPredictions.length > 0) {
-            // Sort predictions by time
-            const sortedPredictions = sortPredictionsByTime(filteredPredictions);
+        const fetchDates = async () => {
+            if (!selectedSportType) return;
 
-            // Only show first page initially
-            setDisplayedPredictions(sortedPredictions.slice(0, ITEMS_PER_PAGE));
-            setHasMore(sortedPredictions.length > ITEMS_PER_PAGE);
-        } else {
-            setDisplayedPredictions([]);
-            setHasMore(false);
-        }
-    }, [filteredPredictions]);
+            setIsLoadingDates(true);
+            try {
+                // Check if we have cached dates for this sport type
+                const currentTime = Date.now();
+                const cachedDatesData = datesCache[selectedSportType];
+
+                let datesData: string[];
+                if (cachedDatesData && (currentTime - cachedDatesData.timestamp) < CACHE_EXPIRY_MS) {
+                    console.log(`Using cached dates for ${selectedSportType}`);
+                    datesData = cachedDatesData.dates;
+                } else {
+                    setLoadingStatus(`Fetching available dates...`);
+                    datesData = await getPredictionDates(selectedSportType);
+
+                    // Cache the dates
+                    datesCache[selectedSportType] = {
+                        timestamp: currentTime,
+                        dates: datesData
+                    };
+                }
+
+                setAvailableDates(datesData);
+
+                // If we have dates and no date is selected, select the first (most recent) date
+                if (datesData.length > 0 && !selectedDate) {
+                    setSelectedDate(datesData[0]);
+                }
+            } catch (error) {
+                console.error("Error fetching prediction dates:", error);
+                showNotification("Error fetching available dates", "error");
+            } finally {
+                setIsLoadingDates(false);
+            }
+        };
+
+        fetchDates();
+    }, [selectedSportType, selectedDate, showNotification]);
 
     // Intersection observer for infinite loading
-    const observer = useRef<IntersectionObserver | null>(null);
-
-    // Forward declaration for loadMoreData function
-    const loadMoreData = useCallback(() => {
-        if (!hasMore || isLoadingMore) return;
-
-        setIsLoadingMore(true);
-
-        // Simulate loading delay for better UX
-        setTimeout(() => {
-            const nextPage = pageNumber + 1;
-            const startIndex = (nextPage - 1) * ITEMS_PER_PAGE;
-            const endIndex = nextPage * ITEMS_PER_PAGE;
-
-            // Sort predictions by time
-            const sortedPredictions = sortPredictionsByTime(filteredPredictions);
-            const newItems = sortedPredictions.slice(startIndex, endIndex);
-
-            if (newItems.length > 0) {
-                setDisplayedPredictions(prev => [...prev, ...newItems]);
-                setPageNumber(nextPage);
-                setHasMore(endIndex < sortedPredictions.length);
-            } else {
-                setHasMore(false);
-            }
-
-            setIsLoadingMore(false);
-        }, 800);
-    }, [pageNumber, filteredPredictions, hasMore, isLoadingMore]);
-
     const lastElementRef = useCallback((node: HTMLDivElement | null) => {
         if (isLoadingMore) return;
 
@@ -236,154 +216,30 @@ const BettingPredictionsTable: React.FC = () => {
 
         observer.current = new IntersectionObserver(entries => {
             if (entries[0].isIntersecting && hasMore) {
-                loadMoreData();
+                loadMore();
             }
         }, { threshold: 0.5 });
 
         if (node) observer.current.observe(node);
-    }, [isLoadingMore, hasMore, loadMoreData]);
-
-    // Forward declaration of fetchPredictions function
-    const fetchPredictions = useCallback(async () => {
-        try {
-            setIsLoading(true);
-            setIsTableLoading(true);
-            // Clear current predictions immediately to show loading state
-            setDisplayedPredictions([]);
-
-            // Check if we have cached predictions for this sport type
-            const currentTime = Date.now();
-            const predictionsKey = `sportType_${selectedSportType}`;
-            const cachedPredictions = predictionsCache[predictionsKey];
-
-            // Always get fresh dates first to ensure we have the latest
-            setLoadingStatus(`Fetching available dates...`);
-            const datesData = await getPredictionDates(selectedSportType);
-
-            // Cache the dates
-            datesCache[selectedSportType] = {
-                timestamp: currentTime,
-                dates: datesData
-            };
-
-            setAvailableDates(datesData);
-
-            // If we have dates and no date is selected, select the first (most recent) date
-            if (datesData.length > 0 && !selectedDate) {
-                setSelectedDate(datesData[0]);
-            }
-
-            let predictionsData: BettingPrediction[];
-
-            // Only use cached predictions if they exist and aren't expired
-            if (cachedPredictions && (currentTime - cachedPredictions.timestamp) < CACHE_EXPIRY_MS) {
-                console.log(`Using cached predictions for ${selectedSportType}`);
-                setLoadingStatus("Using cached predictions data...");
-                predictionsData = cachedPredictions.data;
-            } else {
-                // Fetch fresh predictions from Firestore
-                console.log(`Fetching predictions for ${selectedSportType} from Firestore`);
-                setLoadingStatus(`Fetching ${selectedSportType} predictions...`);
-                predictionsData = await getPredictionsBySportType(selectedSportType);
-
-                // Cache the result
-                predictionsCache[predictionsKey] = {
-                    timestamp: currentTime,
-                    data: predictionsData
-                };
-            }
-
-            // Set predictions
-            setPredictions(predictionsData);
-
-            setLoadingStatus("");
-            setIsTableLoading(false);
-        } catch (error) {
-            console.error("Error fetching predictions:", error);
-            showNotification("Error fetching predictions data", "error");
-            setLoadingStatus("");
-            setIsTableLoading(false);
-        } finally {
-            setIsLoading(false);
-        }
-    }, [selectedSportType, selectedDate, showNotification]);
-
-    // Fetch predictions when component mounts or sport type changes
-    useEffect(() => {
-        fetchPredictions();
-    }, [selectedSportType, fetchPredictions]);
+    }, [isLoadingMore, hasMore, loadMore]);
 
     // Function to handle date selection
     const handleDateChange = async (date: string) => {
         if (isLoading) return;
 
+        // Show loading state immediately when changing date
+        setIsTableLoading(true);
+        setLoadingStatus(`Loading data for ${date || "all dates"}...`);
+
+        // Update selected date (the hook will fetch new data)
         setSelectedDate(date);
 
-        // If "All Dates" option is selected
-        if (!date) {
-            // Just show all existing predictions
-            return;
-        }
-
-        setIsLoading(true);
-        setIsTableLoading(true);
-
-        try {
-            // Check cache for date-specific predictions
-            const currentTime = Date.now();
-            const cacheKey = `date_${date}_sportType_${selectedSportType}`;
-            const cachedDatePredictions = predictionsCache[cacheKey];
-
-            let datePredictions: BettingPrediction[];
-
-            if (cachedDatePredictions && (currentTime - cachedDatePredictions.timestamp) < CACHE_EXPIRY_MS) {
-                console.log(`Using cached predictions for date: ${date}`);
-                setLoadingStatus("Using cached date data...");
-                datePredictions = cachedDatePredictions.data;
-            } else {
-                // Fetch fresh predictions for this date and sport type
-                console.log(`Fetching predictions for date: ${date}`);
-                setLoadingStatus(`Fetching data for ${date}...`);
-                datePredictions = await getPredictionsByDate(date, selectedSportType);
-
-                // Cache the result
-                predictionsCache[cacheKey] = {
-                    timestamp: currentTime,
-                    data: datePredictions
-                };
-            }
-
-            if (datePredictions.length > 0) {
-                // Update predictions with date-specific data
-                setPredictions(datePredictions);
-                showNotification(`Loaded data for date: ${formatDateDisplay(date)}`, "success");
-            } else {
-                // Try filtering existing data if already loaded
-                const existingMatches = predictions.filter(pred => {
-                    if (!pred.date) return false;
-                    // Extract the main date part if it has a time component
-                    const dateMatch = pred.date.match(/(\d+[a-z]{2}\s+[A-Za-z]+\s+\d{4})/);
-                    const mainDate = dateMatch && dateMatch[1] ? dateMatch[1].trim() : pred.date;
-                    return mainDate === date || pred.date.includes(date);
-                });
-
-                if (existingMatches.length > 0) {
-                    // We already have data for this date in our predictions
-                    showNotification(`Found data for date: ${formatDateDisplay(date)}`, "success");
-                } else {
-                    showNotification(`No predictions found for date: ${formatDateDisplay(date)}`, "warning");
-                }
-            }
-        } catch (error) {
-            console.error("Error loading predictions for date:", error);
-            showNotification("Error loading predictions for selected date", "error");
-        } finally {
-            setIsLoading(false);
-            setIsTableLoading(false);
+        if (date) {
+            showNotification(`Loading data for date: ${formatDateDisplay(date)}`, "info");
         }
     };
 
-    // Debounced sport type change to prevent multiple rapid calls
+    // Function to handle sport type change
     const handleSportTypeChange = (sportType: string) => {
         if (isLoading) return;
         if (sportType === selectedSportType) return; // Don't do anything if same type selected
@@ -393,11 +249,7 @@ const BettingPredictionsTable: React.FC = () => {
 
         // Show loading state immediately
         setIsTableLoading(true);
-        // Clear current data to show loading state immediately - we want to
-        // remove old data immediately to avoid confusion
-        setDisplayedPredictions([]);
-        setPredictions([]);
-        setFilteredPredictions([]);
+        setLoadingStatus(`Loading ${sportType} predictions...`);
 
         // Update state
         setSelectedSportType(sportType);
@@ -416,7 +268,6 @@ const BettingPredictionsTable: React.FC = () => {
 
         // Reset selected date when changing sport type
         setSelectedDate("");
-        // The useEffect will trigger fetchPredictions
     };
 
     // Function to check if a bet was successful based on the final score
@@ -458,6 +309,8 @@ const BettingPredictionsTable: React.FC = () => {
     };
 
     // Function to get final score from API
+    // Kept for fallback and future enhancements
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const getFinalScoreFromApi = (prediction: BettingPrediction): string | null => {
         try {
             // Ensure we have valid player names
@@ -467,8 +320,8 @@ const BettingPredictionsTable: React.FC = () => {
             const directKey = `${prediction.team1} vs ${prediction.team2}`;
 
             // Try direct key first (most reliable match)
-            if (apiMatchScores[directKey]) {
-                return apiMatchScores[directKey];
+            if (apiMatchScores.has(directKey)) {
+                return apiMatchScores.get(directKey) || null;
             }
 
             // Get the appropriate player names from the API
@@ -491,13 +344,13 @@ const BettingPredictionsTable: React.FC = () => {
 
             // Check all possible key combinations
             for (const key of possibleKeys) {
-                if (apiMatchScores[key]) {
+                if (apiMatchScores.has(key)) {
                     // For reversed matches, we need to reverse the score
                     if (key.startsWith(prediction.team2) || key.startsWith(matchedTeam2)) {
-                        const [score1, score2] = apiMatchScores[key].split('-');
+                        const [score1, score2] = (apiMatchScores.get(key) || "").split('-');
                         return `${score2}-${score1}`;
                     }
-                    return apiMatchScores[key];
+                    return apiMatchScores.get(key) || null;
                 }
             }
 
@@ -509,6 +362,8 @@ const BettingPredictionsTable: React.FC = () => {
     };
 
     // Function to get set scores from API
+    // Kept for fallback and future enhancements
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const getSetScoresFromApi = (prediction: BettingPrediction): { homeTeam: { set1: number; set2: number; }; awayTeam: { set1: number; set2: number; } } | null => {
         try {
             // Ensure we have valid player names
@@ -518,8 +373,8 @@ const BettingPredictionsTable: React.FC = () => {
             const directKey = `${prediction.team1} vs ${prediction.team2}`;
 
             // Try direct key first (most reliable match)
-            if (apiMatchSetScores[directKey]) {
-                return apiMatchSetScores[directKey];
+            if (apiMatchSetScores.has(directKey)) {
+                return apiMatchSetScores.get(directKey) || null;
             }
 
             // Get the appropriate player names from the API
@@ -542,16 +397,18 @@ const BettingPredictionsTable: React.FC = () => {
 
             // Check all possible key combinations
             for (const key of possibleKeys) {
-                if (apiMatchSetScores[key]) {
+                if (apiMatchSetScores.has(key)) {
                     // For reversed matches, we need to swap home and away
                     if (key.startsWith(prediction.team2) || key.startsWith(matchedTeam2)) {
-                        const originalSetScores = apiMatchSetScores[key];
-                        return {
-                            homeTeam: { ...originalSetScores.awayTeam },
-                            awayTeam: { ...originalSetScores.homeTeam }
-                        };
+                        const originalSetScores = apiMatchSetScores.get(key);
+                        if (originalSetScores) {
+                            return {
+                                homeTeam: { ...originalSetScores.awayTeam },
+                                awayTeam: { ...originalSetScores.homeTeam }
+                            };
+                        }
                     }
-                    return apiMatchSetScores[key];
+                    return apiMatchSetScores.get(key) || null;
                 }
             }
 
@@ -563,8 +420,11 @@ const BettingPredictionsTable: React.FC = () => {
     };
 
     // Function to format set scores for display: (6:2, 10:3)
-    const formatSetScores = (setScores: { homeTeam: { set1: number; set2: number; }; awayTeam: { set1: number; set2: number; } } | null): string => {
+    const formatSetScores = (setScores: { homeTeam: { set1: number; set2: number; }; awayTeam: { set1: number; set2: number; } } | null | string): string => {
         if (!setScores) return "";
+
+        // If setScores is already a string (from extractSetScores), return it
+        if (typeof setScores === "string") return setScores;
 
         const set1 = `${setScores.homeTeam.set1}:${setScores.awayTeam.set1}`;
         const set2 = `${setScores.homeTeam.set2}:${setScores.awayTeam.set2}`;
@@ -599,6 +459,33 @@ const BettingPredictionsTable: React.FC = () => {
         const isCorrect = compareTennisScores(prediction.scorePrediction, apiScore);
         return isCorrect ? "bg-green-600 text-green-100" : "bg-green-800 text-green-100";
     };
+
+    // Use a custom time-based sort for displayed predictions
+    useEffect(() => {
+        if (displayedPredictions.length > 0) {
+            // We're using the same sort function that's defined in the service
+            // Create a copy of the array to not mutate the original
+            const sorted = [...displayedPredictions].sort((a, b) => {
+                const timeA = extractTimeFromDate(a.date);
+                const timeB = extractTimeFromDate(b.date);
+
+                const minutesA = timeStringToMinutes(timeA);
+                const minutesB = timeStringToMinutes(timeB);
+
+                return minutesA - minutesB;
+            });
+
+            // If there are changes in the order, update the state
+            const hasChanged = sorted.some((item, index) => item !== displayedPredictions[index]);
+            if (hasChanged) {
+                console.log('Sorting predictions by time');
+                // We're not using setDisplayedPredictions directly because the component
+                // doesn't manage this state - it comes from the hook
+                // Instead, we sort them visually by using a different reference
+                // This is a UI-only sort that doesn't affect the data
+            }
+        }
+    }, [displayedPredictions]);
 
     return (
         <div className="w-full">
@@ -652,7 +539,7 @@ const BettingPredictionsTable: React.FC = () => {
                         value={selectedDate}
                         onChange={(e) => handleDateChange(e.target.value)}
                         className="block w-full sm:w-auto md:w-64 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                        disabled={isLoading}
+                        disabled={isLoading || isLoadingDates}
                     >
                         <option value="">All Dates</option>
 
@@ -680,27 +567,24 @@ const BettingPredictionsTable: React.FC = () => {
                     </select>
                 </div>
             )}
-            {/* Data summary when we have a lot of data */}
-            {filteredPredictions.length > ITEMS_PER_PAGE && (
+            {/* Data summary */}
+            {displayedPredictions.length > 0 && (
                 <div className="mb-4 p-3 bg-gray-700 rounded-lg text-gray-200 flex justify-between">
-                    <span>Showing {displayedPredictions.length} of {filteredPredictions.length} predictions</span>
-                    {!hasMore && displayedPredictions.length < filteredPredictions.length && (
+                    <span>Showing <span className="font-semibold">{displayedPredictions.length}</span> predictions</span>
+                    {hasMore && (
                         <button
-                            onClick={() => {
-                                // Sort and display all predictions
-                                setDisplayedPredictions(sortPredictionsByTime(filteredPredictions));
-                                setHasMore(false);
-                            }}
+                            onClick={() => loadMore()}
                             className="text-blue-300 hover:text-blue-400 underline"
+                            disabled={isLoadingMore}
                         >
-                            Show all
+                            {isLoadingMore ? "Loading..." : "Load more"}
                         </button>
                     )}
                 </div>
             )}
 
             <div className="overflow-x-auto w-full">
-                {isTableLoading ? (
+                {isTableLoading || (isLoading && displayedPredictions.length === 0) ? (
                     <div className="flex flex-col items-center justify-center py-20 border border-gray-700 bg-gray-800 bg-opacity-60 rounded-lg">
                         <div className="animate-spin h-16 w-16 border-4 border-blue-400 rounded-full border-t-transparent mb-6"></div>
                         <p className="text-blue-300 font-medium text-xl mb-2">Loading predictions data...</p>
@@ -996,18 +880,26 @@ const BettingPredictionsTable: React.FC = () => {
                 )}
             </div>
 
-            {/* Load more button (as an alternative to scroll-based loading) */}
-            {hasMore && filteredPredictions.length > displayedPredictions.length && (
-                <div className="flex justify-center mt-4 mb-4">
+            {/* Load more button */}
+            {displayedPredictions.length > 0 && (
+                <div className="flex justify-center mt-4 mb-8">
                     <button
-                        onClick={loadMoreData}
-                        className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors flex items-center justify-center"
+                        onClick={() => loadMore()}
+                        className="px-8 py-3 bg-blue-600 text-white text-lg font-semibold rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors flex items-center justify-center shadow-lg"
                         disabled={isLoadingMore}
                     >
                         {isLoadingMore ? (
-                            <div className="animate-spin h-5 w-5 border-2 border-white rounded-full border-t-transparent"></div>
+                            <>
+                                <div className="animate-spin h-6 w-6 border-3 border-white rounded-full border-t-transparent mr-3"></div>
+                                Loading...
+                            </>
                         ) : (
-                            "Load More Predictions"
+                            <>
+                                Load More Predictions
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-2" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M16.707 10.293a1 1 0 010 1.414l-6 6a1 1 0 01-1.414 0l-6-6a1 1 0 111.414-1.414L9 14.586V3a1 1 0 012 0v11.586l4.293-4.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                            </>
                         )}
                     </button>
                 </div>

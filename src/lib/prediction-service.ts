@@ -1,5 +1,5 @@
 import { db } from "./firebase";
-import { collection, query, getDocs } from "firebase/firestore";
+import { collection, query, getDocs, limit, startAfter, orderBy, doc, getDoc, where } from "firebase/firestore";
 
 export interface BettingPrediction {
     date: string;
@@ -88,18 +88,62 @@ export const getPredictionDates = async (sportType: string): Promise<string[]> =
 };
 
 /**
- * Get predictions by sport type
+ * Get predictions by sport type with pagination
  */
-export const getPredictionsBySportType = async (sportType: string): Promise<BettingPrediction[]> => {
+export const getPredictionsBySportType = async (
+    sportType: string,
+    pageSize: number = 20,
+    lastDocId?: string
+): Promise<{ predictions: BettingPrediction[], lastDocId: string | null, hasMore: boolean }> => {
     try {
         const collectionName = getSportCollection(sportType);
-        const q = query(collection(db, collectionName));
+        let q;
+
+        // Create a base query with ordering
+        if (lastDocId) {
+            // Get the last document to use as a starting point
+            const lastDocRef = doc(db, collectionName, lastDocId);
+            const lastDocSnap = await getDoc(lastDocRef);
+
+            if (lastDocSnap.exists()) {
+                // Create query with pagination using startAfter
+                q = query(
+                    collection(db, collectionName),
+                    // First by standardDate for consistent date ordering
+                    orderBy("standardDate", "desc"),
+                    // Then by date field which may contain time information
+                    orderBy("date", "asc"),
+                    startAfter(lastDocSnap),
+                    limit(pageSize)
+                );
+            } else {
+                // If last document doesn't exist, start from beginning
+                q = query(
+                    collection(db, collectionName),
+                    orderBy("standardDate", "desc"),
+                    orderBy("date", "asc"),
+                    limit(pageSize)
+                );
+            }
+        } else {
+            // First page query
+            q = query(
+                collection(db, collectionName),
+                orderBy("standardDate", "desc"),
+                orderBy("date", "asc"),
+                limit(pageSize)
+            );
+        }
 
         const querySnapshot = await getDocs(q);
         const predictions: BettingPrediction[] = [];
         const teamPairs = new Set<string>(); // Track unique team pairs to avoid duplicates
+        let newLastDocId: string | null = null;
 
         querySnapshot.forEach((doc) => {
+            // Store the last document ID for next pagination
+            newLastDocId = doc.id;
+
             const prediction = doc.data() as BettingPrediction;
 
             // Skip entries that are just tournament names without team data
@@ -119,7 +163,14 @@ export const getPredictionsBySportType = async (sportType: string): Promise<Bett
             }
         });
 
-        return predictions;
+        // Determine if there are more results available
+        const hasMore = querySnapshot.size >= pageSize;
+
+        return {
+            predictions,
+            lastDocId: newLastDocId,
+            hasMore
+        };
     } catch (error) {
         console.error("Error fetching predictions by sport type:", error);
         throw error;
@@ -127,35 +178,111 @@ export const getPredictionsBySportType = async (sportType: string): Promise<Bett
 };
 
 /**
- * Get predictions by date and sport type
+ * Get predictions by date and sport type with pagination
  */
-export const getPredictionsByDate = async (date: string, sportType: string): Promise<BettingPrediction[]> => {
+export const getPredictionsByDate = async (
+    date: string,
+    sportType: string,
+    pageSize: number = 20,
+    lastDocId?: string
+): Promise<{ predictions: BettingPrediction[], lastDocId: string | null, hasMore: boolean }> => {
     try {
-        // Get all predictions for this sport type
         const collectionName = getSportCollection(sportType);
-        const q = query(collection(db, collectionName));
+        let q;
 
-        const querySnapshot = await getDocs(q);
+        // For date filtering we have two approaches:
+        // 1. If using standardDate field which is exact, we can use a where clause
+        // 2. For text search in date field, we need to query and filter client-side
+
+        // Try the more efficient approach with standardDate field first
+        if (lastDocId) {
+            // Get the last document to use as a starting point
+            const lastDocRef = doc(db, collectionName, lastDocId);
+            const lastDocSnap = await getDoc(lastDocRef);
+
+            if (lastDocSnap.exists()) {
+                q = query(
+                    collection(db, collectionName),
+                    where("standardDate", "==", date),
+                    orderBy("date", "asc"), // Order by time (contained in date field)
+                    startAfter(lastDocSnap),
+                    limit(pageSize)
+                );
+            } else {
+                q = query(
+                    collection(db, collectionName),
+                    where("standardDate", "==", date),
+                    orderBy("date", "asc"),
+                    limit(pageSize)
+                );
+            }
+        } else {
+            q = query(
+                collection(db, collectionName),
+                where("standardDate", "==", date),
+                orderBy("date", "asc"),
+                limit(pageSize)
+            );
+        }
+
+        let querySnapshot = await getDocs(q);
+
+        // If no results with standardDate, try getting all and filtering manually
+        if (querySnapshot.empty) {
+            if (lastDocId) {
+                const lastDocRef = doc(db, collectionName, lastDocId);
+                const lastDocSnap = await getDoc(lastDocRef);
+
+                if (lastDocSnap.exists()) {
+                    q = query(
+                        collection(db, collectionName),
+                        orderBy("date", "asc"),
+                        startAfter(lastDocSnap),
+                        limit(pageSize * 5) // Get more to account for filtering
+                    );
+                } else {
+                    q = query(
+                        collection(db, collectionName),
+                        orderBy("date", "asc"),
+                        limit(pageSize * 5)
+                    );
+                }
+            } else {
+                q = query(
+                    collection(db, collectionName),
+                    orderBy("date", "asc"),
+                    limit(pageSize * 5)
+                );
+            }
+
+            querySnapshot = await getDocs(q);
+        }
+
         const predictions: BettingPrediction[] = [];
         const teamPairs = new Set<string>(); // Track unique team pairs to avoid duplicates
+        let newLastDocId: string | null = null;
+        let documentsProcessed = 0;
 
-        // Filter predictions based on the date pattern
-        querySnapshot.forEach((doc) => {
-            const prediction = doc.data() as BettingPrediction;
+        // Process until we get pageSize matches or run out of documents
+        for (const docSnap of querySnapshot.docs) {
+            documentsProcessed++;
+            newLastDocId = docSnap.id;
+
+            const prediction = docSnap.data() as BettingPrediction;
 
             // Skip entries that are just tournament names without team data
             const isTournamentOnly = !prediction.team1 || !prediction.team2 ||
                 (prediction.team1.trim() === "" && prediction.team2.trim() === "");
             if (isTournamentOnly) {
-                return;
+                continue;
             }
 
-            // Match by date:
+            // Match by date (only needed for the non-standardDate approach):
             // 1. Check if the prediction's date contains our target date
             // 2. Or check if standardDate matches exactly
             const dateMatches =
-                (prediction.date && prediction.date.includes(date)) ||
-                (prediction.standardDate && prediction.standardDate === date);
+                (prediction.standardDate && prediction.standardDate === date) ||
+                (prediction.date && prediction.date.includes(date));
 
             if (dateMatches) {
                 // Create a unique key based on both team names to identify duplicates
@@ -165,13 +292,69 @@ export const getPredictionsByDate = async (date: string, sportType: string): Pro
                 if (!teamPairs.has(teamKey)) {
                     teamPairs.add(teamKey);
                     predictions.push(prediction);
+
+                    // Stop once we have enough predictions
+                    if (predictions.length >= pageSize) {
+                        break;
+                    }
                 }
             }
-        });
+        }
 
-        return predictions;
+        // Sort predictions by time before returning
+        const sortedPredictions = sortPredictionsByTime(predictions);
+
+        // Determine if there are more results available
+        const hasMore = documentsProcessed === querySnapshot.size && querySnapshot.size >= pageSize;
+
+        return {
+            predictions: sortedPredictions,
+            lastDocId: newLastDocId,
+            hasMore
+        };
     } catch (error) {
         console.error("Error fetching predictions by date:", error);
         throw error;
     }
+};
+
+// Helper function to extract time from a date string
+const extractTimeFromDate = (dateStr: string | undefined): string => {
+    if (!dateStr) return "";
+
+    // Try to extract time in format HH:MM EDT or similar
+    const timeMatch = dateStr.match(/(\d{2}:\d{2}(?:\s*[A-Z]{3,4})?)/);
+    if (timeMatch && timeMatch[1]) {
+        return timeMatch[1].trim();
+    }
+
+    return "";
+};
+
+// Helper function to convert time string to minutes for sorting
+const timeStringToMinutes = (timeStr: string | undefined): number => {
+    if (!timeStr) return Number.MAX_SAFE_INTEGER; // Put items without time at the end
+
+    // Try to extract time in format HH:MM EDT or similar
+    const timeMatch = timeStr.match(/(\d{2}):(\d{2})(?:\s*[A-Z]{3,4})?/);
+    if (timeMatch && timeMatch[1] && timeMatch[2]) {
+        const hours = parseInt(timeMatch[1], 10);
+        const minutes = parseInt(timeMatch[2], 10);
+        return hours * 60 + minutes;
+    }
+
+    return Number.MAX_SAFE_INTEGER;
+};
+
+// Helper function to sort predictions by time
+const sortPredictionsByTime = (predictions: BettingPrediction[]): BettingPrediction[] => {
+    return [...predictions].sort((a, b) => {
+        const timeA = extractTimeFromDate(a.date);
+        const timeB = extractTimeFromDate(b.date);
+
+        const minutesA = timeStringToMinutes(timeA);
+        const minutesB = timeStringToMinutes(timeB);
+
+        return minutesA - minutesB;
+    });
 }; 

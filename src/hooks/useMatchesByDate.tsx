@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { BettingPrediction } from "@/lib/prediction-service";
 
 /**
  * Custom hook for fetching tennis/table-tennis match data by date
@@ -41,19 +42,6 @@ interface CachedApiData {
     timestamp: number;
     formattedDate: string;
     sportType: string;
-}
-
-interface BettingPrediction {
-    date: string;
-    team1: string;
-    oddTeam1: number;
-    team2: string;
-    oddTeam2: number;
-    scorePrediction: string;
-    confidence: number;
-    bettingPredictionTeam1Win: number;
-    bettingPredictionTeam2Win: number;
-    finalScore: string;
 }
 
 // Cache settings
@@ -248,11 +236,12 @@ interface MatchesByDateResult {
 
 /**
  * Custom hook to fetch and process tennis and table tennis matches by date
+ * This is a lightweight version that only loads API data for the needed records
  */
 export const useMatchesByDate = (
     selectedDate: string,
-    predictions: BettingPrediction[],
-    sportType: string = "tennis" // Default to tennis if not specified
+    sportType: string = "tennis", // Default to tennis if not specified
+    predictions: BettingPrediction[] = [] // This will be the currently visible predictions only
 ): MatchesByDateResult => {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -307,9 +296,12 @@ export const useMatchesByDate = (
 
             // Function to find the best player match in the API data
             const bestMatchFinder = (excelName: string): string => {
-                // Existing implementation
-                // ...
                 if (!excelName) return "";
+
+                // Function to normalize names for comparison
+                const normalizeName = (name: string): string => {
+                    return name.toLowerCase().replace(/[^a-z0-9]/g, "");
+                };
 
                 // Special case: if the excel name is already in the list, return it
                 const normalizedExcelName = normalizeName(excelName);
@@ -369,63 +361,12 @@ export const useMatchesByDate = (
                 return bestScore >= 20 ? bestMatch : "";
             };
 
-            // Function to normalize names for comparison
-            const normalizeName = (name: string): string => {
-                return name.toLowerCase().replace(/[^a-z0-9]/g, "");
-            };
-
-            // Helper function to compare name arrays
-            const doNamesMatch = (apiNames: [string, string], predictionNames: [string, string]): boolean => {
-                // If any names are empty, we can't do a reliable match
-                if (!apiNames[0] || !apiNames[1] || !predictionNames[0] || !predictionNames[1]) {
-                    return false;
-                }
-
-                // Normalize all names for comparison
-                const normalizedApiNames = apiNames.map(name => normalizeName(name));
-                const normalizedPredictionNames = predictionNames.map(name => normalizeName(name));
-
-                // Check for direct matches in both directions
-                if (normalizedApiNames[0] === normalizedPredictionNames[0] &&
-                    normalizedApiNames[1] === normalizedPredictionNames[1]) {
-                    return true;
-                }
-
-                if (normalizedApiNames[0] === normalizedPredictionNames[1] &&
-                    normalizedApiNames[1] === normalizedPredictionNames[0]) {
-                    return true;
-                }
-
-                // If no direct matches, try partial matching
-                // Calculate how well names match in both directions
-                const match1 = (normalizedApiNames[0].includes(normalizedPredictionNames[0]) ||
-                    normalizedPredictionNames[0].includes(normalizedApiNames[0])) &&
-                    (normalizedApiNames[1].includes(normalizedPredictionNames[1]) ||
-                        normalizedPredictionNames[1].includes(normalizedApiNames[1]));
-
-                const match2 = (normalizedApiNames[0].includes(normalizedPredictionNames[1]) ||
-                    normalizedPredictionNames[1].includes(normalizedApiNames[0])) &&
-                    (normalizedApiNames[1].includes(normalizedPredictionNames[0]) ||
-                        normalizedPredictionNames[0].includes(normalizedApiNames[1]));
-
-                return match1 || match2;
-            };
-
             // Process the matches from the API
             for (const match of matches) {
                 if (match.home_team_name && match.away_team_name) {
                     // Add to player name list
                     matchNames.push(match.home_team_name);
                     matchNames.push(match.away_team_name);
-
-                    // Check if match involves a prediction (using the matching function)
-                    for (const pred of predictions) {
-                        if (pred.team1 && pred.team2 &&
-                            doNamesMatch([match.home_team_name, match.away_team_name], [pred.team1, pred.team2])) {
-                            // Match found between API data and prediction
-                            console.log(`Match found: ${match.home_team_name} vs ${match.away_team_name}`);
-                        }
-                    }
 
                     // Store match score if available
                     if (match.home_team_score !== undefined && match.away_team_score !== undefined) {
