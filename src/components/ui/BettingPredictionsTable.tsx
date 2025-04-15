@@ -91,6 +91,34 @@ const isValidDateFormat = (dateStr: string): boolean => {
     return /^\d+(?:st|nd|rd|th)\s+[A-Za-z]+\s+\d{4}$/.test(dateStr.trim());
 };
 
+// Helper function to convert time string to minutes for sorting
+const timeStringToMinutes = (timeStr: string | undefined): number => {
+    if (!timeStr) return Number.MAX_SAFE_INTEGER; // Put items without time at the end
+
+    // Try to extract time in format HH:MM EDT or similar
+    const timeMatch = timeStr.match(/(\d{2}):(\d{2})(?:\s*[A-Z]{3,4})?/);
+    if (timeMatch && timeMatch[1] && timeMatch[2]) {
+        const hours = parseInt(timeMatch[1], 10);
+        const minutes = parseInt(timeMatch[2], 10);
+        return hours * 60 + minutes;
+    }
+
+    return Number.MAX_SAFE_INTEGER;
+};
+
+// Helper function to sort predictions by time
+const sortPredictionsByTime = (predictions: BettingPrediction[]): BettingPrediction[] => {
+    return [...predictions].sort((a, b) => {
+        const timeA = extractTimeFromDate(a.date);
+        const timeB = extractTimeFromDate(b.date);
+
+        const minutesA = timeStringToMinutes(timeA);
+        const minutesB = timeStringToMinutes(timeB);
+
+        return minutesA - minutesB;
+    });
+};
+
 const BettingPredictionsTable: React.FC = () => {
     const { showNotification } = useNotification();
     const searchParams = useSearchParams();
@@ -170,9 +198,12 @@ const BettingPredictionsTable: React.FC = () => {
     // Effect to load initial page of data when filteredPredictions changes
     useEffect(() => {
         if (filteredPredictions.length > 0) {
+            // Sort predictions by time
+            const sortedPredictions = sortPredictionsByTime(filteredPredictions);
+
             // Only show first page initially
-            setDisplayedPredictions(filteredPredictions.slice(0, ITEMS_PER_PAGE));
-            setHasMore(filteredPredictions.length > ITEMS_PER_PAGE);
+            setDisplayedPredictions(sortedPredictions.slice(0, ITEMS_PER_PAGE));
+            setHasMore(sortedPredictions.length > ITEMS_PER_PAGE);
         } else {
             setDisplayedPredictions([]);
             setHasMore(false);
@@ -208,12 +239,14 @@ const BettingPredictionsTable: React.FC = () => {
             const startIndex = (nextPage - 1) * ITEMS_PER_PAGE;
             const endIndex = nextPage * ITEMS_PER_PAGE;
 
-            const newItems = filteredPredictions.slice(startIndex, endIndex);
+            // Sort predictions by time
+            const sortedPredictions = sortPredictionsByTime(filteredPredictions);
+            const newItems = sortedPredictions.slice(startIndex, endIndex);
 
             if (newItems.length > 0) {
                 setDisplayedPredictions(prev => [...prev, ...newItems]);
                 setPageNumber(nextPage);
-                setHasMore(endIndex < filteredPredictions.length);
+                setHasMore(endIndex < sortedPredictions.length);
             } else {
                 setHasMore(false);
             }
@@ -661,7 +694,8 @@ const BettingPredictionsTable: React.FC = () => {
                     {!hasMore && displayedPredictions.length < filteredPredictions.length && (
                         <button
                             onClick={() => {
-                                setDisplayedPredictions(filteredPredictions);
+                                // Sort and display all predictions
+                                setDisplayedPredictions(sortPredictionsByTime(filteredPredictions));
                                 setHasMore(false);
                             }}
                             className="text-blue-300 hover:text-blue-400 underline"
