@@ -8,10 +8,17 @@ service firebase.storage {
         get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == "admin";
     }
     
+    // Function to check if request is from Firebase service account
+    function isServiceAccount() {
+      return request.auth.token.firebase.sign_in_provider == 'custom';
+    }
+    
     // Default rule - deny access
     match /{allPaths=**} {
       // Allow read access to everyone
       allow read: if true;
+      // Allow Firebase service accounts full access
+      allow read, write: if isServiceAccount();
       allow option: if true;  // Always allow preflight OPTIONS requests
     }
     

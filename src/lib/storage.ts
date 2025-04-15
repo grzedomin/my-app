@@ -1,5 +1,5 @@
 import { ref, getDownloadURL, deleteObject, uploadBytesResumable } from "firebase/storage";
-import { storage, db } from "./firebase";
+import { storage, db, auth } from "./firebase";
 import { doc, setDoc, collection, getDocs, query, orderBy, deleteDoc, getDoc, where } from "firebase/firestore";
 import { v4 as uuidv4 } from "uuid";
 import * as XLSX from "xlsx";
@@ -97,14 +97,31 @@ export const extractDateFromExcel = async (file: File): Promise<string | null> =
     }
 };
 
-// Firebase functions API URL
-const FUNCTIONS_BASE_URL = process.env.NEXT_PUBLIC_FIREBASE_FUNCTIONS_URL || "https://us-central1-[YOUR-PROJECT-ID].cloudfunctions.net";
+// Firebase functions API URL - Make sure this is properly set in .env.local
+const FUNCTIONS_BASE_URL = process.env.NEXT_PUBLIC_FIREBASE_FUNCTIONS_URL ||
+    "https://us-central1-oskar-app-e04e4.cloudfunctions.net";
 
 /**
  * Fetch an Excel file safely using the Cloud Function to avoid CORS issues
  */
 export const fetchExcelFile = async (filePath: string): Promise<ArrayBuffer> => {
     try {
+        // Get current user token for authentication
+        const currentUser = auth.currentUser;
+        let idToken = "";
+
+        if (!currentUser) {
+            throw new Error("User not authenticated. Please sign in to access files.");
+        }
+
+        try {
+            // Always request a fresh token to ensure it's not expired
+            idToken = await currentUser.getIdToken(true);
+        } catch (tokenError) {
+            console.error("Failed to get auth token:", tokenError);
+            throw new Error("Authentication error. Please sign in again.");
+        }
+
         // First check if we should use direct URL or function URL
         let url;
         const isLocalhost = typeof window !== "undefined" && window.location.hostname === "localhost";
@@ -126,15 +143,19 @@ export const fetchExcelFile = async (filePath: string): Promise<ArrayBuffer> => 
         console.log("Fetching Excel file from:", url);
 
         // Fetch the file as an array buffer
+        const headers: Record<string, string> = {
+            "Accept": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "Authorization": `Bearer ${idToken}`
+        };
+
         const response = await fetch(url, {
             method: "GET",
-            headers: {
-                "Accept": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            },
+            headers
         });
 
         if (!response.ok) {
-            throw new Error(`Failed to fetch Excel file: ${response.status} ${response.statusText}`);
+            const errorText = await response.text().catch(() => "Unknown error");
+            throw new Error(`Failed to fetch Excel file: ${response.status} ${response.statusText} - ${errorText}`);
         }
 
         return await response.arrayBuffer();

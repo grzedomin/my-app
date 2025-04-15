@@ -7,6 +7,16 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
     }
+    
+    // Function to check if request is from Firebase service account
+    function isServiceAccount() {
+      return request.auth.token.firebase.sign_in_provider == 'custom';
+    }
+    
+    // Allow service accounts to read/write to all collections
+    match /{document=**} {
+      allow read, write: if isServiceAccount();
+    }
   
     // Allow anyone to read files metadata
     match /files/{fileId} {
@@ -15,6 +25,19 @@ service cloud.firestore {
       allow create, update: if request.auth != null && request.resource.data.userId == request.auth.uid;
       // Allow admins to delete any file
       allow delete: if isAdmin();
+    }
+    
+    // Add rules for predictions and processed-files collections
+    match /predictions/{docId} {
+      allow read: if true;
+      // Only service accounts and admins can write
+      allow create, update, delete: if isAdmin();
+    }
+    
+    match /processed-files/{docId} {
+      allow read: if true;
+      // Only service accounts and admins can write
+      allow create, update, delete: if isAdmin();
     }
     
     // Users collection rules

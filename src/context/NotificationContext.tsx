@@ -32,7 +32,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
     // Function to add a notification
     const showNotification = useCallback(
         (message: string, type: NotificationType = "info", duration = 5000) => {
-            const id = Date.now().toString();
+            // Generate a truly unique ID (timestamp + random string)
+            const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
             const notification: Notification = {
                 id,
                 message,

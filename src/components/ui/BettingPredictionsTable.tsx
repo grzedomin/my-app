@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { PieChart } from "react-minimal-pie-chart";
-import * as XLSX from "xlsx";
 import { useNotification } from "@/context/NotificationContext";
-import { getAllFiles, fetchExcelFile, getFilesByDate, getFilesBySportType } from "@/lib/storage";
 import { useSearchParams } from "next/navigation";
 import { useMatchesByDate } from "@/hooks/useMatchesByDate";
-import { FileData } from "@/types";
+import { BettingPrediction, getPredictionsBySportType, getPredictionsByDate, getPredictionDates } from "@/lib/prediction-service";
 
 // Spinner components for loading states
 const TableSpinner = () => (
@@ -30,41 +28,15 @@ const LoadMoreSpinner = () => (
 // Number of items to load at once for lazy loading
 const ITEMS_PER_PAGE = 20;
 
-interface BettingPrediction {
-    date: string;
-    team1: string;
-    oddTeam1: number;
-    team2: string;
-    oddTeam2: number;
-    scorePrediction: string;
-    confidence: number;
-    bettingPredictionTeam1Win: number;
-    bettingPredictionTeam2Win: number;
-    finalScore: string;
-}
-
-// Define a type for the Excel row data
-interface ExcelRowData {
-    Date?: string;
-    Team_1?: string;
-    Odd_1?: string | number;
-    Team_2?: string;
-    Odd_2?: string | number;
-    Score_prediction?: string;
-    Confidence?: string | number;
-    Betting_predictions_team_1_win?: string | number;
-    Betting_predictions_team_2_win?: string | number;
-    Final_Score?: string;
-    [key: string]: string | number | undefined;
-}
-
 // Helper function to format date display
 const formatDateDisplay = (dateStr: string | undefined): string => {
     if (!dateStr) return "";
 
-    // Extract main date part if it includes time
-    const dateMatch = dateStr.match(/(\d+[a-z]{2}\s+[A-Za-z]+\s+\d{4})/);
-    return dateMatch && dateMatch[1] ? dateMatch[1].trim() : dateStr;
+    // Extract main date part like "10th Apr 2025" from the string
+    const dateMatch = dateStr.match(/(\d+(?:st|nd|rd|th)\s+[A-Za-z]+\s+\d{4})/);
+
+    // Only return the extracted date part if found
+    return dateMatch && dateMatch[1] ? dateMatch[1].trim() : "";
 };
 
 // Helper function to extract time from a date string
@@ -108,12 +80,16 @@ const cleanFinalScore = (finalScore: string): string => {
     return finalScore.replace(/\s*\([^)]+\)/, "").trim();
 };
 
-// Cache for files by sport type to prevent redundant Firebase queries
-const filesCache: { [sportType: string]: { timestamp: number; files: FileData[] } } = {};
+// Cache for predictions by sport type to prevent redundant Firestore queries
+const predictionsCache: { [key: string]: { timestamp: number; data: BettingPrediction[] } } = {};
+const datesCache: { [sportType: string]: { timestamp: number; dates: string[] } } = {};
 const CACHE_EXPIRY_MS = 60 * 1000; // Cache expires after 1 minute
 
-// Cache for parsed file data to prevent processing the same file multiple times
-const fileDataCache: { [filePath: string]: { timestamp: number; data: BettingPrediction[] } } = {};
+// Helper function to check if string is a valid date format
+const isValidDateFormat = (dateStr: string): boolean => {
+    // Only show items that match the "10th Apr 2025" pattern
+    return /^\d+(?:st|nd|rd|th)\s+[A-Za-z]+\s+\d{4}$/.test(dateStr.trim());
+};
 
 const BettingPredictionsTable: React.FC = () => {
     const { showNotification } = useNotification();
@@ -123,8 +99,7 @@ const BettingPredictionsTable: React.FC = () => {
     const [predictions, setPredictions] = useState<BettingPrediction[]>([]);
     const [filteredPredictions, setFilteredPredictions] = useState<BettingPrediction[]>([]);
     const [displayedPredictions, setDisplayedPredictions] = useState<BettingPrediction[]>([]);
-    const [isUploading, setIsUploading] = useState(false);
-    const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
     const [selectedDate, setSelectedDate] = useState<string>("");
     const [availableDates, setAvailableDates] = useState<string[]>([]);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -163,16 +138,27 @@ const BettingPredictionsTable: React.FC = () => {
             setFilteredPredictions(predictions);
         } else {
             // Filter predictions by selected date 
-            // Now using the simplified date format without time component
             const filtered = predictions.filter(pred => {
                 if (!pred.date) return false;
 
-                // Extract the main date part if it has a time component
-                const dateMatch = pred.date.match(/(\d+[a-z]{2}\s+[A-Za-z]+\s+\d{4})/);
-                const mainDate = dateMatch && dateMatch[1] ? dateMatch[1].trim() : pred.date;
+                // Extract the date part like "10th Apr 2025" from the string
+                const dateMatch = pred.date.match(/(\d+(?:st|nd|rd|th)\s+[A-Za-z]+\s+\d{4})/);
+                const extractedDate = dateMatch && dateMatch[1] ? dateMatch[1].trim() : "";
 
-                // Compare with selected date
-                return mainDate === selectedDate || pred.date.includes(selectedDate);
+                // Also check standardDate if it exists
+                const matchesStandardDate = pred.standardDate === selectedDate;
+
+                // For tournament names, we use startsWith/includes logic
+                const tournamentMatch = dateMatch ?
+                    false : // If it has a date pattern, don't use this logic
+                    (pred.date.toLowerCase().includes(selectedDate.toLowerCase())
+                        || selectedDate.toLowerCase().includes(pred.date.toLowerCase()));
+
+                // Compare with selected date - either the extracted date matches or it's a tournament name match
+                return extractedDate === selectedDate ||
+                    matchesStandardDate ||
+                    pred.date.includes(selectedDate) ||
+                    tournamentMatch;
             });
             setFilteredPredictions(filtered);
         }
@@ -237,90 +223,79 @@ const BettingPredictionsTable: React.FC = () => {
         }, 800);
     }, [pageNumber, filteredPredictions, hasMore, isLoadingMore]);
 
-    // Fetch saved files when component mounts or sport type changes
+    // Fetch predictions when component mounts or sport type changes
     useEffect(() => {
-        fetchSavedFiles();
+        fetchPredictions();
     }, [selectedSportType]);
 
-    // Function to fetch saved files from database with caching
-    const fetchSavedFiles = async () => {
+    // Function to fetch prediction data from Firestore
+    const fetchPredictions = async () => {
         try {
-            setIsLoadingFiles(true);
+            setIsLoading(true);
             setIsTableLoading(true);
             // Clear current predictions immediately to show loading state
             setDisplayedPredictions([]);
 
-            // Check if we have cached files for this sport type
+            // Check if we have cached predictions for this sport type
             const currentTime = Date.now();
-            const cachedData = filesCache[selectedSportType];
+            const predictionsKey = `sportType_${selectedSportType}`;
+            const cachedPredictions = predictionsCache[predictionsKey];
 
-            let files: FileData[];
+            // Always get fresh dates first to ensure we have the latest
+            setLoadingStatus(`Fetching available dates...`);
+            const datesData = await getPredictionDates(selectedSportType);
 
-            if (cachedData && (currentTime - cachedData.timestamp) < CACHE_EXPIRY_MS) {
-                // Use cached files if they're still valid
-                console.log(`Using cached files for ${selectedSportType}`);
-                setLoadingStatus("Using cached data...");
-                files = cachedData.files;
+            // Cache the dates
+            datesCache[selectedSportType] = {
+                timestamp: currentTime,
+                dates: datesData
+            };
+
+            setAvailableDates(datesData);
+
+            // If we have dates and no date is selected, select the first (most recent) date
+            if (datesData.length > 0 && !selectedDate) {
+                setSelectedDate(datesData[0]);
+            }
+
+            let predictionsData: BettingPrediction[];
+
+            // Only use cached predictions if they exist and aren't expired
+            if (cachedPredictions && (currentTime - cachedPredictions.timestamp) < CACHE_EXPIRY_MS) {
+                console.log(`Using cached predictions for ${selectedSportType}`);
+                setLoadingStatus("Using cached predictions data...");
+                predictionsData = cachedPredictions.data;
             } else {
-                // Fetch fresh files from Firebase
-                console.log(`Fetching new files for ${selectedSportType}`);
-                setLoadingStatus(`Fetching ${selectedSportType} files...`);
-                if (selectedSportType) {
-                    files = await getFilesBySportType(selectedSportType);
-                } else {
-                    files = await getAllFiles();
-                }
+                // Fetch fresh predictions from Firestore
+                console.log(`Fetching predictions for ${selectedSportType} from Firestore`);
+                setLoadingStatus(`Fetching ${selectedSportType} predictions...`);
+                predictionsData = await getPredictionsBySportType(selectedSportType);
 
                 // Cache the result
-                filesCache[selectedSportType] = {
+                predictionsCache[predictionsKey] = {
                     timestamp: currentTime,
-                    files: files
+                    data: predictionsData
                 };
             }
 
-            // Extract unique dates from files
-            setLoadingStatus("Processing dates...");
-            const dates = files
-                .map(file => file.fileDate)
-                .filter((date): date is string => !!date)
-                .filter((date, index, self) => self.indexOf(date) === index)
-                .sort();
+            // Set predictions
+            setPredictions(predictionsData);
 
-            setAvailableDates(dates);
-
-            // Automatically load the most recent file (if any exist)
-            if (files.length > 0) {
-                // Sort files by uploadDate (descending order - newest first)
-                const sortedFiles = [...files].sort((a, b) => b.uploadDate - a.uploadDate);
-                const mostRecentFile = sortedFiles[0];
-
-                // Set the selected date if available
-                if (mostRecentFile.fileDate) {
-                    setSelectedDate(mostRecentFile.fileDate);
-                }
-
-                // Load the most recent file
-                setLoadingStatus("Loading recent match data...");
-                await handleLoadFile(mostRecentFile);
-            } else {
-                // No files - reset predictions
-                setPredictions([]);
-                setLoadingStatus("");
-                setIsTableLoading(false);
-            }
+            setLoadingStatus("");
+            setIsTableLoading(false);
         } catch (error) {
-            console.error("Error fetching files:", error);
-            showNotification("Error fetching saved files", "error");
+            console.error("Error fetching predictions:", error);
+            showNotification("Error fetching predictions data", "error");
             setLoadingStatus("");
             setIsTableLoading(false);
         } finally {
-            setIsLoadingFiles(false);
+            setIsLoading(false);
         }
     };
 
     // Function to handle date selection
     const handleDateChange = async (date: string) => {
-        if (isUploading || isLoadingFiles) return;
+        if (isLoading) return;
 
         setSelectedDate(date);
 
@@ -330,16 +305,37 @@ const BettingPredictionsTable: React.FC = () => {
             return;
         }
 
-        setIsLoadingFiles(true);
+        setIsLoading(true);
+        setIsTableLoading(true);
 
         try {
-            // Get files for the selected date and sport type
-            const files = await getFilesByDate(date, selectedSportType);
+            // Check cache for date-specific predictions
+            const currentTime = Date.now();
+            const cacheKey = `date_${date}_sportType_${selectedSportType}`;
+            const cachedDatePredictions = predictionsCache[cacheKey];
 
-            if (files.length > 0) {
-                // Load the first file with this date
-                await handleLoadFile(files[0]);
-                // Date filtering will be automatically applied through the useEffect
+            let datePredictions: BettingPrediction[];
+
+            if (cachedDatePredictions && (currentTime - cachedDatePredictions.timestamp) < CACHE_EXPIRY_MS) {
+                console.log(`Using cached predictions for date: ${date}`);
+                setLoadingStatus("Using cached date data...");
+                datePredictions = cachedDatePredictions.data;
+            } else {
+                // Fetch fresh predictions for this date and sport type
+                console.log(`Fetching predictions for date: ${date}`);
+                setLoadingStatus(`Fetching data for ${date}...`);
+                datePredictions = await getPredictionsByDate(date, selectedSportType);
+
+                // Cache the result
+                predictionsCache[cacheKey] = {
+                    timestamp: currentTime,
+                    data: datePredictions
+                };
+            }
+
+            if (datePredictions.length > 0) {
+                // Update predictions with date-specific data
+                setPredictions(datePredictions);
                 showNotification(`Loaded data for date: ${formatDateDisplay(date)}`, "success");
             } else {
                 // Try filtering existing data if already loaded
@@ -355,22 +351,21 @@ const BettingPredictionsTable: React.FC = () => {
                     // We already have data for this date in our predictions
                     showNotification(`Found data for date: ${formatDateDisplay(date)}`, "success");
                 } else {
-                    showNotification(`No files found for date: ${formatDateDisplay(date)}`, "warning");
-                    // Don't clear all predictions, just filter to empty set
-                    // The useEffect will take care of this
+                    showNotification(`No predictions found for date: ${formatDateDisplay(date)}`, "warning");
                 }
             }
         } catch (error) {
-            console.error("Error loading files for date:", error);
-            showNotification("Error loading files for selected date. The Firebase index may still be creating.", "error");
+            console.error("Error loading predictions for date:", error);
+            showNotification("Error loading predictions for selected date", "error");
         } finally {
-            setIsLoadingFiles(false);
+            setIsLoading(false);
+            setIsTableLoading(false);
         }
     };
 
     // Debounced sport type change to prevent multiple rapid calls
     const handleSportTypeChange = (sportType: string) => {
-        if (isUploading || isLoadingFiles) return;
+        if (isLoading) return;
         if (sportType === selectedSportType) return; // Don't do anything if same type selected
 
         // Set the active sport type change
@@ -401,106 +396,7 @@ const BettingPredictionsTable: React.FC = () => {
 
         // Reset selected date when changing sport type
         setSelectedDate("");
-        // The useEffect will trigger fetchSavedFiles
-    };
-
-    // Function to load file data from storage with caching
-    const handleLoadFile = async (fileData: FileData) => {
-        if (isUploading) return;
-        setIsUploading(true);
-
-        try {
-            // Check if we have this file cached
-            const currentTime = Date.now();
-            const cachedFileData = fileDataCache[fileData.filePath];
-
-            if (cachedFileData && (currentTime - cachedFileData.timestamp) < CACHE_EXPIRY_MS) {
-                // Use cached data
-                console.log(`Using cached data for file: ${fileData.fileName}`);
-                setLoadingStatus("Loading cached predictions...");
-                setPredictions(cachedFileData.data);
-                setIsUploading(false);
-                setLoadingStatus("");
-                setIsTableLoading(false);
-                return;
-            }
-
-            // Not cached, fetch and process the file
-
-            // Use the fetchExcelFile function to avoid CORS issues
-            const arrayBuffer = await fetchExcelFile(fileData.filePath);
-
-            try {
-                // Process the Excel file using the array buffer
-                setLoadingStatus("Processing Excel data...");
-                const workbook = XLSX.read(arrayBuffer, { type: "array" });
-                const sheetName = workbook.SheetNames[0];
-
-                if (!sheetName) {
-                    throw new Error("Excel file doesn't contain any sheets");
-                }
-
-                const worksheet = workbook.Sheets[sheetName];
-
-                // Convert the Excel data to JSON
-                const jsonData = XLSX.utils.sheet_to_json<ExcelRowData>(worksheet);
-
-                if (jsonData.length === 0) {
-                    throw new Error("Excel file doesn't contain any data");
-                }
-                // Map the Excel data to our BettingPrediction interface
-                // Filter out rows that are just tournament headers (have no Team_1 or Team_2)
-                setLoadingStatus("Preparing match predictions...");
-                const validRows = jsonData.filter((row: ExcelRowData) => {
-                    // Skip rows that don't have both Team_1 and Team_2 (likely tournament headers)
-                    return row.Team_1 && row.Team_2;
-                });
-
-                if (validRows.length === 0) {
-                    throw new Error("Excel file doesn't contain any valid match data");
-                }
-
-                const mappedData = validRows.map((row: ExcelRowData) => {
-                    return {
-                        date: row.Date ?? "",
-                        team1: row.Team_1 ?? "",
-                        oddTeam1: parseFloat(row.Odd_1?.toString() ?? "0"),
-                        team2: row.Team_2 ?? "",
-                        oddTeam2: parseFloat(row.Odd_2?.toString() ?? "0"),
-                        scorePrediction: row.Score_prediction ?? "",
-                        confidence: parseFloat(row.Confidence?.toString() ?? "0"),
-                        bettingPredictionTeam1Win: parseFloat(row.Betting_predictions_team_1_win?.toString() ?? "0"),
-                        bettingPredictionTeam2Win: parseFloat(row.Betting_predictions_team_2_win?.toString() ?? "0"),
-                        finalScore: row.Final_Score ?? ""
-                    } as BettingPrediction;
-                });
-
-                // Cache the processed data
-                fileDataCache[fileData.filePath] = {
-                    timestamp: currentTime,
-                    data: mappedData
-                };
-
-                setPredictions(mappedData);
-                setIsUploading(false);
-                setLoadingStatus("");
-                setIsTableLoading(false);
-            } catch (error) {
-                console.error("Error parsing Excel file:", error);
-                const errorMessage = error instanceof Error ? error.message : "Unknown error";
-                showNotification(`Failed to parse Excel file: ${errorMessage}`, "error");
-                setIsUploading(false);
-                setLoadingStatus("");
-                setIsTableLoading(false);
-            }
-        } catch (error: unknown) {
-            console.error("Error loading file:", error);
-            const errorMessage = error instanceof Error ? error.message : "Unknown error";
-            showNotification(`Failed to load file: ${errorMessage}`, "error");
-            setIsUploading(false);
-            setLoadingStatus("");
-            setIsTableLoading(false);
-        }
+        // The useEffect will trigger fetchPredictions
     };
 
     // Function to check if a bet was successful based on the final score
@@ -663,7 +559,7 @@ const BettingPredictionsTable: React.FC = () => {
                             ? "bg-blue-600 text-white"
                             : "bg-gray-700 text-gray-300 hover:bg-gray-600"
                             }`}
-                        disabled={isLoadingFiles || isUploading}
+                        disabled={isLoading}
                     >
                         <span>Tennis</span>
                         {isTableLoading && selectedSportType === "tennis" && (
@@ -678,7 +574,7 @@ const BettingPredictionsTable: React.FC = () => {
                             ? "bg-blue-600 text-white"
                             : "bg-gray-700 text-gray-300 hover:bg-gray-600"
                             }`}
-                        disabled={isLoadingFiles || isUploading}
+                        disabled={isLoading}
                     >
                         <span>Table Tennis</span>
                         {isTableLoading && selectedSportType === "table-tennis" && (
@@ -701,12 +597,31 @@ const BettingPredictionsTable: React.FC = () => {
                         value={selectedDate}
                         onChange={(e) => handleDateChange(e.target.value)}
                         className="block w-full sm:w-auto md:w-64 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                        disabled={isLoadingFiles || isUploading || isTableLoading}
+                        disabled={isLoading}
                     >
                         <option value="">All Dates</option>
-                        {availableDates.map((date) => (
-                            <option key={date} value={date}>{formatDateDisplay(date)}</option>
-                        ))}
+
+                        {/* Date format options */}
+                        <optgroup label="Dates">
+                            {availableDates
+                                .filter(date => isValidDateFormat(date))
+                                .map((date) => (
+                                    <option key={date} value={date}>{date}</option>
+                                ))
+                            }
+                        </optgroup>
+
+                        {/* Handle possible tournament dropdown items */}
+                        {false && ( // Disabled tournament options in dropdown
+                            <optgroup label="Tournaments">
+                                {availableDates
+                                    .filter(date => !isValidDateFormat(date) && date.trim().length > 0)
+                                    .map((tournament) => (
+                                        <option key={tournament} value={tournament}>{tournament}</option>
+                                    ))
+                                }
+                            </optgroup>
+                        )}
                     </select>
                 </div>
             )}
@@ -1016,7 +931,7 @@ const BettingPredictionsTable: React.FC = () => {
                     <div className="bg-gray-800 p-6 text-center rounded-lg shadow-md border border-gray-700">
                         <h3 className="text-lg font-semibold text-gray-200 mb-2">No Predictions Available</h3>
                         <p className="text-gray-400">
-                            {isLoadingFiles
+                            {isLoading
                                 ? "Loading predictions..."
                                 : selectedDate
                                     ? `No predictions found for the selected date: ${formatDateDisplay(selectedDate)}`
