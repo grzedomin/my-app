@@ -997,14 +997,18 @@ const BettingPredictionsTable: React.FC = () => {
             </div>
 
             {/* Load more button (as an alternative to scroll-based loading) */}
-            {hasMore && filteredPredictions.length > displayedPredictions.length && !isLoadingMore && (
+            {hasMore && filteredPredictions.length > displayedPredictions.length && (
                 <div className="flex justify-center mt-4 mb-4">
                     <button
                         onClick={loadMoreData}
-                        className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors"
+                        className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors flex items-center justify-center"
                         disabled={isLoadingMore}
                     >
-                        Load More Predictions
+                        {isLoadingMore ? (
+                            <div className="animate-spin h-5 w-5 border-2 border-white rounded-full border-t-transparent"></div>
+                        ) : (
+                            "Load More Predictions"
+                        )}
                     </button>
                 </div>
             )}
