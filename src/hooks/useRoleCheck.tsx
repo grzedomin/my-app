@@ -20,7 +20,7 @@ export function useRoleCheck(requiredRole: "admin" | "user" | null = null) {
         if (requiredRole && userRole !== requiredRole) {
             if (requiredRole === "admin") {
                 // If admin access is required but user is not an admin
-                router.push("/dashboard");
+                router.push("/scorepredictions");
             } else {
                 // Handle other role-specific redirects
                 router.push("/");

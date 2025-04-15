@@ -24,7 +24,7 @@ export default function SignIn() {
     useEffect(() => {
         // Redirect if user is already logged in
         if (user) {
-            router.push("/dashboard");
+            router.push("/scorepredictions");
         }
     }, [user, router]);
 
@@ -64,7 +64,7 @@ export default function SignIn() {
         try {
             await signIn(email, password);
             showNotification("Successfully signed in!", "success");
-            router.push("/dashboard");
+            router.push("/scorepredictions");
         } catch (error: unknown) {
             if (error instanceof FirebaseError) {
                 // Provide user-friendly error messages
@@ -93,7 +93,7 @@ export default function SignIn() {
             setError("");
             await signInWithGoogle();
             showNotification("Successfully signed in with Google!", "success");
-            router.push("/dashboard");
+            router.push("/scorepredictions");
         } catch (error: unknown) {
             if (error instanceof FirebaseError) {
                 if (error.code === "auth/popup-closed-by-user") {

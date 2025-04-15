@@ -32,10 +32,10 @@ export default function AdminDashboard() {
                         <div className="flex items-center space-x-4">
                             <h1 className="text-xl font-bold">Admin Dashboard</h1>
                             <Link
-                                href="/dashboard"
+                                href="/scorepredictions"
                                 className="bg-gray-700 px-4 py-2 text-white rounded-md hover:bg-gray-600 transition-colors"
                             >
-                                Back to Dashboard
+                                Back to Score Predictions
                             </Link>
                         </div>
                         <div className="flex items-center">

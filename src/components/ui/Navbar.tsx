@@ -17,7 +17,7 @@ const Navbar = () => {
     const [userMenuOpen, setUserMenuOpen] = useState(false);
 
     // Don't show dashboard link on dashboard page
-    const isDashboard = pathname === "/dashboard" || pathname?.startsWith("/dashboard/");
+    const isDashboard = pathname === "/scorepredictions" || pathname?.startsWith("/scorepredictions/");
 
     // Don't show the navbar at all on admin pages
     const isAdminPage = pathname === "/admin" || pathname?.startsWith("/admin/");
@@ -102,12 +102,12 @@ const Navbar = () => {
                             <>
                                 {!isDashboard && (
                                     <Link
-                                        href="/dashboard"
+                                        href="/scorepredictions"
                                         className="inline-block px-4 py-2 text-white hover:text-blue-400 transition duration-300"
-                                        aria-label="Go to dashboard"
+                                        aria-label="Go to score predictions"
                                         tabIndex={0}
                                     >
-                                        Dashboard
+                                        Score Predictions
                                     </Link>
                                 )}
                                 <AdminOnly>
@@ -201,13 +201,13 @@ const Navbar = () => {
                                 <>
                                     {!isDashboard && (
                                         <Link
-                                            href="/dashboard"
+                                            href="/scorepredictions"
                                             className="block px-4 py-2 text-white hover:text-blue-400 transition duration-300"
-                                            aria-label="Go to dashboard"
+                                            aria-label="Go to scorepredictions"
                                             tabIndex={0}
                                             onClick={() => setMobileMenuOpen(false)}
                                         >
-                                            Dashboard
+                                            Score Predictions
                                         </Link>
                                     )}
                                     <AdminOnly>

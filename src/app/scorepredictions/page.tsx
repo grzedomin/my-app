@@ -32,7 +32,7 @@ export default function Dashboard() {
                 style={{ backgroundImage: "url('/background.avif')" }}
             >
                 <div className="absolute inset-0 flex flex-col items-center justify-center px-4 text-center">
-                    <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-4">Dashboard</h1>
+                    <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-4">Score Predictions</h1>
                     <p className="text-xl sm:text-2xl text-white mb-6 max-w-2xl">
                         Unlock the power of AI-driven predictions and make smarter tennis bets
                     </p>

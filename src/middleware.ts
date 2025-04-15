@@ -27,7 +27,7 @@ export async function middleware(request: NextRequest) {
 // Add your protected routes here
 export const config = {
     matcher: [
-        "/dashboard/:path*",
+        "/scorepredictions/:path*",
         "/profile/:path*",
         "/admin/:path*",
         // add other protected routes
