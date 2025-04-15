@@ -5,19 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useMatchesByDate } from "@/hooks/query";
 import { BettingPrediction, getPredictionsBySportType, getPredictionsByDate, getPredictionDates } from "@/lib/prediction-service";
 
-// Spinner components for loading states
-const TableSpinner = () => (
-    <div className="flex justify-center items-center py-2">
-        <div className="animate-spin h-5 w-5 border-2 border-green-300 rounded-full border-t-transparent"></div>
-    </div>
-);
-
-const CardSpinner = () => (
-    <div className="flex justify-center items-center py-1">
-        <div className="animate-spin h-6 w-6 border-2 border-green-300 rounded-full border-t-transparent"></div>
-    </div>
-);
-
+// Spinner component for loading states
 const LoadMoreSpinner = () => (
     <div className="flex justify-center items-center py-4 mb-4">
         <div className="animate-spin h-8 w-8 border-3 border-blue-400 rounded-full border-t-transparent"></div>
@@ -595,6 +583,11 @@ const BettingPredictionsTable: React.FC = () => {
 
     // Function to determine score class based on source and correctness
     const getScoreClass = (prediction: BettingPrediction, apiScore: string | null): string => {
+        // If no API score and no finalScore, just use row styling
+        if (!apiScore && !prediction.finalScore) {
+            return "";
+        }
+
         // If no API score, use existing logic for prediction's finalScore
         if (!apiScore) {
             return prediction.finalScore && isBetSuccessful(prediction)
@@ -828,7 +821,7 @@ const BettingPredictionsTable: React.FC = () => {
                                                 </td>
                                                 <td className={`py-3 px-4 text-center w-[15%] ${getScoreClass(prediction, apiScore)}`}>
                                                     {!apiScore && !prediction.finalScore ? (
-                                                        <TableSpinner />
+                                                        <div className="font-bold text-gray-400">-</div>
                                                     ) : (
                                                         <>
                                                             <div className="font-bold">{displayScore}</div>
@@ -964,9 +957,7 @@ const BettingPredictionsTable: React.FC = () => {
                                             <div className="text-center">
                                                 <div className="text-sm text-gray-400">Final Score</div>
                                                 {!apiScore && !prediction.finalScore ? (
-                                                    <div className="mt-1">
-                                                        <CardSpinner />
-                                                    </div>
+                                                    <div className="font-bold text-gray-400 mt-1">-</div>
                                                 ) : (
                                                     <>
                                                         <div className="font-bold text-green-200">
