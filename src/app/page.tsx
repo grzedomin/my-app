@@ -1,6 +1,11 @@
+"use client";
+
 import Link from "next/link";
+import { useAuth } from "@/context/AuthContext";
 
 export default function Home() {
+  const { user, loading } = useAuth();
+
   return (
     <div className="min-h-screen bg-gray-900 text-white">
       {/* Hero Banner */}
@@ -14,24 +19,46 @@ export default function Home() {
               <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold leading-tight mb-6">
                 In the game of tennis, knowledge is power. Our AI brings you the knowledge you need.
               </h1>
-              <div className="mt-8 flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
-                <Link
-                  href="/auth/signin"
-                  className="inline-block bg-blue-600 px-6 py-3 text-white rounded-md hover:bg-blue-700 transition duration-300 text-center"
-                  aria-label="Sign in to your account"
-                  tabIndex={0}
-                >
-                  Sign In
-                </Link>
-                <Link
-                  href="/auth/signup"
-                  className="inline-block bg-transparent border-2 border-white px-6 py-3 text-white rounded-md hover:bg-white hover:text-gray-900 transition duration-300 text-center"
-                  aria-label="Create a new account"
-                  tabIndex={0}
-                >
-                  Sign Up
-                </Link>
-              </div>
+              {loading ? (
+                <div className="mt-8">
+                  <div className="inline-block bg-gray-700 animate-pulse px-6 py-3 rounded-md w-32"></div>
+                </div>
+              ) : (
+                <>
+                  {!user && (
+                    <div className="mt-8 flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
+                      <Link
+                        href="/auth/signin"
+                        className="inline-block bg-blue-600 px-6 py-3 text-white rounded-md hover:bg-blue-700 transition duration-300 text-center"
+                        aria-label="Sign in to your account"
+                        tabIndex={0}
+                      >
+                        Sign In
+                      </Link>
+                      <Link
+                        href="/auth/signup"
+                        className="inline-block bg-transparent border-2 border-white px-6 py-3 text-white rounded-md hover:bg-white hover:text-gray-900 transition duration-300 text-center"
+                        aria-label="Create a new account"
+                        tabIndex={0}
+                      >
+                        Sign Up
+                      </Link>
+                    </div>
+                  )}
+                  {user && (
+                    <div className="mt-8">
+                      <Link
+                        href="/scorepredictions"
+                        className="inline-block bg-blue-600 px-6 py-3 text-white rounded-md hover:bg-blue-700 transition duration-300 text-center"
+                        aria-label="View predictions"
+                        tabIndex={0}
+                      >
+                        View Predictions
+                      </Link>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -71,24 +98,46 @@ export default function Home() {
             <p className="text-lg sm:text-xl text-gray-300 mb-10">
               Join us for a smarter betting experience. Our AI technology transforms complex data into clear, actionable insights to help you maximize your returns.
             </p>
-            <div className="mt-8 flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-4">
-              <Link
-                href="/auth/signup"
-                className="inline-block bg-blue-600 px-6 py-3 sm:px-8 sm:py-4 text-lg sm:text-xl font-bold text-white rounded-md hover:bg-blue-700 transition duration-300 text-center"
-                aria-label="Sign up now"
-                tabIndex={0}
-              >
-                Sign Up Now
-              </Link>
-              <Link
-                href="/auth/signin"
-                className="inline-block bg-transparent border-2 border-white px-6 py-3 sm:px-8 sm:py-4 text-lg sm:text-xl font-bold text-white rounded-md hover:bg-white hover:text-gray-900 transition duration-300 text-center"
-                aria-label="Already have an account? Sign in"
-                tabIndex={0}
-              >
-                Sign In
-              </Link>
-            </div>
+            {loading ? (
+              <div className="mt-8 flex justify-center">
+                <div className="inline-block bg-gray-700 animate-pulse px-6 py-3 rounded-md w-32"></div>
+              </div>
+            ) : (
+              <>
+                {!user && (
+                  <div className="mt-8 flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-4">
+                    <Link
+                      href="/auth/signup"
+                      className="inline-block bg-blue-600 px-6 py-3 sm:px-8 sm:py-4 text-lg sm:text-xl font-bold text-white rounded-md hover:bg-blue-700 transition duration-300 text-center"
+                      aria-label="Sign up now"
+                      tabIndex={0}
+                    >
+                      Sign Up Now
+                    </Link>
+                    <Link
+                      href="/auth/signin"
+                      className="inline-block bg-transparent border-2 border-white px-6 py-3 sm:px-8 sm:py-4 text-lg sm:text-xl font-bold text-white rounded-md hover:bg-white hover:text-gray-900 transition duration-300 text-center"
+                      aria-label="Already have an account? Sign in"
+                      tabIndex={0}
+                    >
+                      Sign In
+                    </Link>
+                  </div>
+                )}
+                {user && (
+                  <div className="mt-8">
+                    <Link
+                      href="/scorepredictions"
+                      className="inline-block bg-blue-600 px-6 py-3 sm:px-8 sm:py-4 text-lg sm:text-xl font-bold text-white rounded-md hover:bg-blue-700 transition duration-300 text-center"
+                      aria-label="View predictions"
+                      tabIndex={0}
+                    >
+                      View Predictions
+                    </Link>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
       </section>
