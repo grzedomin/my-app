@@ -201,21 +201,7 @@ const BettingPredictionsTable: React.FC = () => {
     // Intersection observer for infinite loading
     const observer = useRef<IntersectionObserver | null>(null);
 
-    const lastElementRef = useCallback((node: HTMLDivElement | null) => {
-        if (isLoadingMore) return;
-
-        if (observer.current) observer.current.disconnect();
-
-        observer.current = new IntersectionObserver(entries => {
-            if (entries[0].isIntersecting && hasMore) {
-                loadMoreData();
-            }
-        }, { threshold: 0.5 });
-
-        if (node) observer.current.observe(node);
-    }, [isLoadingMore, hasMore]);
-
-    // Function to load more data as user scrolls
+    // Forward declaration for loadMoreData function
     const loadMoreData = useCallback(() => {
         if (!hasMore || isLoadingMore) return;
 
@@ -243,13 +229,22 @@ const BettingPredictionsTable: React.FC = () => {
         }, 800);
     }, [pageNumber, filteredPredictions, hasMore, isLoadingMore]);
 
-    // Fetch predictions when component mounts or sport type changes
-    useEffect(() => {
-        fetchPredictions();
-    }, [selectedSportType]);
+    const lastElementRef = useCallback((node: HTMLDivElement | null) => {
+        if (isLoadingMore) return;
 
-    // Function to fetch prediction data from Firestore
-    const fetchPredictions = async () => {
+        if (observer.current) observer.current.disconnect();
+
+        observer.current = new IntersectionObserver(entries => {
+            if (entries[0].isIntersecting && hasMore) {
+                loadMoreData();
+            }
+        }, { threshold: 0.5 });
+
+        if (node) observer.current.observe(node);
+    }, [isLoadingMore, hasMore, loadMoreData]);
+
+    // Forward declaration of fetchPredictions function
+    const fetchPredictions = useCallback(async () => {
         try {
             setIsLoading(true);
             setIsTableLoading(true);
@@ -311,7 +306,12 @@ const BettingPredictionsTable: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [selectedSportType, selectedDate, showNotification]);
+
+    // Fetch predictions when component mounts or sport type changes
+    useEffect(() => {
+        fetchPredictions();
+    }, [selectedSportType, fetchPredictions]);
 
     // Function to handle date selection
     const handleDateChange = async (date: string) => {

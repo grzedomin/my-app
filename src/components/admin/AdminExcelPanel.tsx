@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useNotification } from "@/context/NotificationContext";
 import {
@@ -61,13 +61,116 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
     // Get default sport type from URL params or props for viewing - but we won't use this for filtering
     const [viewSportType, setViewSportType] = useState<string>("all");
 
+    // Forward declare handleLoadFile function
+    const handleLoadFile = useCallback(async (fileData: FileData) => {
+        if (isUploading) return;
+        setIsUploading(true);
+        setUploadError("");
+
+        try {
+            // Use the fetchExcelFile function to avoid CORS issues
+            const arrayBuffer = await fetchExcelFile(fileData.filePath);
+
+            try {
+                // Process the Excel file using the array buffer
+                const workbook = XLSX.read(arrayBuffer, { type: "array" });
+                const sheetName = workbook.SheetNames[0];
+
+                if (!sheetName) {
+                    throw new Error("Excel file doesn't contain any sheets");
+                }
+
+                const worksheet = workbook.Sheets[sheetName];
+
+                // Convert the Excel data to JSON
+                const jsonData = XLSX.utils.sheet_to_json<ExcelRowData>(worksheet);
+
+                if (jsonData.length === 0) {
+                    throw new Error("Excel file doesn't contain any data");
+                }
+
+                // Filter out rows that are just tournament headers
+                const validRows = jsonData.filter((row: ExcelRowData) => {
+                    // Skip rows that don't have both Team_1 and Team_2 (likely tournament headers)
+                    return row.Team_1 && row.Team_2;
+                });
+
+                if (validRows.length === 0) {
+                    throw new Error("Excel file doesn't contain any valid match data");
+                }
+
+                // Map the Excel data
+                const mappedData = validRows.map((row: ExcelRowData) => {
+                    return {
+                        date: row.Date ?? "",
+                        team1: row.Team_1 ?? "",
+                        oddTeam1: parseFloat(row.Odd?.toString() ?? "0"),
+                        team2: row.Team_2 ?? "",
+                        oddTeam2: parseFloat(row.Odd2?.toString() ?? "0"),
+                        scorePrediction: row.Score_prediction ?? "",
+                        confidence: parseFloat(row.Confidence?.toString() ?? "0"),
+                        bettingPredictionTeam1Win: parseFloat(row.Betting_predictions_team_1_win?.toString() ?? "0"),
+                        bettingPredictionTeam2Win: parseFloat(row.Betting_predictions_team_2_win?.toString() ?? "0"),
+                        finalScore: row.Final_Score ?? ""
+                    };
+                });
+
+                onFileProcessed(mappedData);
+                showNotification(`Successfully loaded file: ${fileData.fileName}`, "success");
+            } catch (error) {
+                console.error("Error processing Excel file:", error);
+                showNotification(`Error processing Excel file: ${error instanceof Error ? error.message : "Unknown error"}`, "error");
+            }
+        } catch (error) {
+            console.error("Error loading file from storage:", error);
+            showNotification("Failed to load file from storage", "error");
+        } finally {
+            setIsUploading(false);
+        }
+    }, [isUploading, setIsUploading, onFileProcessed, showNotification]);
+
+    // Function to fetch saved files from database - using useCallback to avoid dependency cycles
+    const fetchSavedFiles = useCallback(async () => {
+        try {
+            setIsLoadingFiles(true);
+
+            // If user is logged in, clean up their orphaned file records
+            if (user) {
+                await cleanupOrphanedFiles(user.uid);
+            }
+
+            // Always get all files regardless of the user and sport type
+            const files = await getAllFiles();
+
+            setAvailableFiles(files);
+
+            // Automatically load the most recent file (if any exist)
+            if (files.length > 0) {
+                // Sort files by uploadDate (descending order - newest first)
+                const sortedFiles = [...files].sort((a, b) => b.uploadDate - a.uploadDate);
+                const mostRecentFile = sortedFiles[0];
+
+                // Load the most recent file
+                await handleLoadFile(mostRecentFile);
+            } else {
+                // No files - reset predictions
+                onFileProcessed([]);
+            }
+        } catch (error) {
+            console.error("Error fetching files:", error);
+            showNotification("Error fetching saved files", "error");
+        } finally {
+            setIsLoadingFiles(false);
+        }
+    }, [user, onFileProcessed, setIsLoadingFiles, showNotification, handleLoadFile]);
+
     // Update when propSportType changes - we keep these functions for compatibility
     useEffect(() => {
         if (propSportType !== viewSportType) {
             setViewSportType(propSportType);
             fetchSavedFiles();
         }
-    }, [propSportType]);
+    }, [propSportType, viewSportType, fetchSavedFiles]);
 
     // Update when search params change
     useEffect(() => {
@@ -76,7 +179,7 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
             setViewSportType(sportParam);
             fetchSavedFiles();
         }
-    }, [searchParams]);
+    }, [searchParams, viewSportType, fetchSavedFiles]);
 
     // Function to detect sport type from file name
     const detectSportTypeFromFileName = (fileName: string): string | null => {
@@ -200,112 +303,6 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
 
             reader.readAsBinaryString(file);
         });
-    };
-
-    // Function to load file data from storage
-    const handleLoadFile = async (fileData: FileData) => {
-        if (isUploading) return;
-        setIsUploading(true);
-        setUploadError("");
-
-        try {
-            // Use the fetchExcelFile function to avoid CORS issues
-            const arrayBuffer = await fetchExcelFile(fileData.filePath);
-
-            try {
-                // Process the Excel file using the array buffer
-                const workbook = XLSX.read(arrayBuffer, { type: "array" });
-                const sheetName = workbook.SheetNames[0];
-
-                if (!sheetName) {
-                    throw new Error("Excel file doesn't contain any sheets");
-                }
-
-                const worksheet = workbook.Sheets[sheetName];
-
-                // Convert the Excel data to JSON
-                const jsonData = XLSX.utils.sheet_to_json<ExcelRowData>(worksheet);
-
-                if (jsonData.length === 0) {
-                    throw new Error("Excel file doesn't contain any data");
-                }
-
-                // Filter out rows that are just tournament headers
-                const validRows = jsonData.filter((row: ExcelRowData) => {
-                    // Skip rows that don't have both Team_1 and Team_2 (likely tournament headers)
-                    return row.Team_1 && row.Team_2;
-                });
-
-                if (validRows.length === 0) {
-                    throw new Error("Excel file doesn't contain any valid match data");
-                }
-
-                // Map the Excel data
-                const mappedData = validRows.map((row: ExcelRowData) => {
-                    return {
-                        date: row.Date ?? "",
-                        team1: row.Team_1 ?? "",
-                        oddTeam1: parseFloat(row.Odd?.toString() ?? "0"),
-                        team2: row.Team_2 ?? "",
-                        oddTeam2: parseFloat(row.Odd2?.toString() ?? "0"),
-                        scorePrediction: row.Score_prediction ?? "",
-                        confidence: parseFloat(row.Confidence?.toString() ?? "0"),
-                        bettingPredictionTeam1Win: parseFloat(row.Betting_predictions_team_1_win?.toString() ?? "0"),
-                        bettingPredictionTeam2Win: parseFloat(row.Betting_predictions_team_2_win?.toString() ?? "0"),
-                        finalScore: row.Final_Score ?? ""
-                    };
-                });
-
-                onFileProcessed(mappedData);
-            } catch (error) {
-                console.error("Error parsing Excel file:", error);
-                const errorMessage = error instanceof Error ? error.message : "Unknown error";
-                setUploadError(`Failed to parse Excel file: ${errorMessage}`);
-                showNotification("Failed to parse Excel file", "error");
-            }
-        } catch (error: unknown) {
-            console.error("Error loading file:", error);
-            const errorMessage = error instanceof Error ? error.message : "Unknown error";
-            setUploadError(`Failed to load file: ${errorMessage}`);
-            showNotification("Failed to load file from storage", "error");
-        } finally {
-            setIsUploading(false);
-        }
-    };
-
-    // Function to fetch saved files from database
-    const fetchSavedFiles = async () => {
-        try {
-            setIsLoadingFiles(true);
-
-            // If user is logged in, clean up their orphaned file records
-            if (user) {
-                await cleanupOrphanedFiles(user.uid);
-            }
-
-            // Always get all files regardless of the user and sport type
-            const files = await getAllFiles();
-
-            setAvailableFiles(files);
-
-            // Automatically load the most recent file (if any exist)
-            if (files.length > 0) {
-                // Sort files by uploadDate (descending order - newest first)
-                const sortedFiles = [...files].sort((a, b) => b.uploadDate - a.uploadDate);
-                const mostRecentFile = sortedFiles[0];
-
-                // Load the most recent file
-                await handleLoadFile(mostRecentFile);
-            } else {
-                // No files - reset predictions
-                onFileProcessed([]);
-            }
-        } catch (error) {
-            console.error("Error fetching files:", error);
-            showNotification("Error fetching saved files", "error");
-        } finally {
-            setIsLoadingFiles(false);
-        }
     };
 
     // Function to handle file selection
@@ -468,57 +465,44 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
         }
     };
 
-    // Function to handle file deletion
+    // Function to handle deleting a file
     const handleDeleteFile = async (fileId: string, fileName: string) => {
-        if (isUploading || isLoadingFiles) return;
-
-        // Open confirmation modal and set file to delete
         setFileToDelete({ id: fileId, name: fileName });
         setIsConfirmModalOpen(true);
     };
 
-    // Helper function to format date display
+    // Function to format date display
     const formatDateDisplay = (dateStr: string | undefined): string => {
-        if (!dateStr) return "";
-
-        // Extract main date part if it includes time
-        const dateMatch = dateStr.match(/(\d+[a-z]{2}\s+[A-Za-z]+\s+\d{4})/);
-        return dateMatch && dateMatch[1] ? dateMatch[1].trim() : dateStr;
+        if (!dateStr) return "-";
+        return dateStr.replace("-", "/").replace("-", "/");
     };
 
-    // Function to confirm file deletion
-    const confirmDeleteFile = async () => {
-        if (!fileToDelete) return;
+    // Function to confirm file deletion - wrapped in useCallback to avoid dependency issues
+    const confirmDeleteFile = useCallback(async () => {
+        if (!fileToDelete?.id) return;
 
         try {
-            // Use the utility function that handles both Storage and Firestore deletion
+            setIsLoadingFiles(true);
             await deleteFile(fileToDelete.id);
+            showNotification(`File deleted: ${fileToDelete.name}`, "success");
+            setIsConfirmModalOpen(false);
+            setFileToDelete(null);
 
-            showNotification(`Successfully deleted file: ${fileToDelete.name}`, "success");
-            // Refresh the file list
+            // Refresh file list
             await fetchSavedFiles();
         } catch (error) {
             console.error("Error deleting file:", error);
-
-            // Check if it's a Firebase permission error
-            const errorMessage = error instanceof Error ? error.message : "Unknown error";
-            if (errorMessage.includes("permission-denied")) {
-                showNotification("Permission denied. You may not have proper access rights.", "error");
-            } else {
-                showNotification(`Failed to delete file: ${errorMessage}`, "error");
-            }
+            showNotification(`Failed to delete file: ${fileToDelete.name}`, "error");
         } finally {
-            // Close the modal and reset state
-            setIsConfirmModalOpen(false);
-            setFileToDelete(null);
+            setIsLoadingFiles(false);
         }
-    };
+    }, [fileToDelete, setIsLoadingFiles, showNotification, fetchSavedFiles]);
 
-    // Function to cancel deletion
-    const cancelDeleteFile = () => {
+    // Function to cancel file deletion
+    const cancelDeleteFile = useCallback(() => {
         setIsConfirmModalOpen(false);
         setFileToDelete(null);
-    };
+    }, []);
 
     // Handle keyboard events for the modal
     useEffect(() => {
@@ -534,7 +518,7 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
 
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [isConfirmModalOpen, fileToDelete]);
+    }, [isConfirmModalOpen, fileToDelete, confirmDeleteFile, cancelDeleteFile]);
 
     return (
         <AdminOnly>

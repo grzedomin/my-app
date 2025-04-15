@@ -1,7 +1,7 @@
 "use client";
 
 import { Subscription } from "@/types";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { useAuth } from "./AuthContext";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -22,7 +22,7 @@ export const UserProfileProvider = ({ children }: { children: React.ReactNode })
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const fetchUserSubscription = async () => {
+    const fetchUserSubscription = useCallback(async () => {
         if (!user) return;
 
         try {
@@ -54,7 +54,7 @@ export const UserProfileProvider = ({ children }: { children: React.ReactNode })
         } finally {
             setLoading(false);
         }
-    };
+    }, [user, setSubscription, setLoading, setError]);
 
     // Fetch subscription when user changes
     useEffect(() => {
@@ -63,7 +63,7 @@ export const UserProfileProvider = ({ children }: { children: React.ReactNode })
         } else {
             setSubscription(null);
         }
-    }, [user]);
+    }, [user, fetchUserSubscription]);
 
     const clearError = () => setError(null);
 

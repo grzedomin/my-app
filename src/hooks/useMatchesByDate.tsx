@@ -1,13 +1,8 @@
 import { useState, useEffect } from "react";
-import Fuse from "fuse.js";
 
 /**
- * @deprecated This hook is deprecated. 
- * Please use the React Query version from 'src/hooks/query/useMatchesByDate.ts' instead.
- * Example usage: import { useMatchesByDate } from "@/hooks/query";
- * 
- * This version uses local storage for caching which is less efficient than React Query.
- * It will be removed in a future update.
+ * Custom hook for fetching tennis/table-tennis match data by date
+ * from a sports API and managing local data caching
  */
 
 // Define a type for the API match data
@@ -296,205 +291,173 @@ export const useMatchesByDate = (
         return `${year}-${month}-${day}`;
     };
 
-    // Process API data to extract useful information
-    const processApiData = (matches: ApiMatch[]) => {
-        // Extract all player names from API data for fuzzy matching
-        const playerNamesSet = new Set<string>();
-        matches.forEach((match: ApiMatch) => {
-            if (match.home_team_name) playerNamesSet.add(match.home_team_name);
-            if (match.away_team_name) playerNamesSet.add(match.away_team_name);
-        });
-        const allPlayerNames = Array.from(playerNamesSet);
-        setApiPlayerNames(allPlayerNames);
-
-        // Function to find best match for a player name using fuzzy matching
-        const findBestPlayerMatch = (excelName: string): string => {
-            // If empty name, return as is
-            if (!excelName || excelName.trim() === "") return excelName;
-
-            // Direct match check first
-            const normalizedExcelName = excelName.toLowerCase().trim();
-            const directMatch = allPlayerNames.find(apiName =>
-                apiName.toLowerCase().trim() === normalizedExcelName
-            );
-            if (directMatch) return directMatch;
-
-            // Create Fuse instance for fuzzy matching
-            const fuseOptions = {
-                includeScore: true,
-                threshold: 0.6, // Higher threshold = more permissive matching
-                keys: ["name"]
-            };
-
-            // Convert player names to objects for Fuse
-            const playerObjects = allPlayerNames.map(name => ({ name }));
-            const fuse = new Fuse(playerObjects, fuseOptions);
-
-            // Extract name parts for more nuanced matching
-            const excelNameParts = extractNameParts(excelName);
-
-            // Try to match using the full name first
-            let results = fuse.search(excelName);
-
-            // If no good matches, try matching with just the last name
-            // (which is often more reliable in abbreviated forms)
-            if (results.length === 0 || (results[0].score && results[0].score > 0.4)) {
-                const lastNameResults = fuse.search(excelNameParts.lastName);
-
-                // Only use last name results if they're better
-                if (lastNameResults.length > 0 &&
-                    (results.length === 0 ||
-                        (lastNameResults[0].score && results[0].score &&
-                            lastNameResults[0].score < results[0].score))) {
-                    results = lastNameResults;
-                }
-            }
-
-            // Additional verification for matches
-            if (results.length > 0 && results[0].item) {
-                const bestMatch = results[0].item.name;
-                const bestMatchParts = extractNameParts(bestMatch);
-
-                // If we have an initial in the Excel name, verify it matches
-                if (excelNameParts.firstName.length === 1) {
-                    // Check if the initial matches the first letter of the matched name
-                    if (bestMatchParts.firstName.charAt(0) === excelNameParts.firstName) {
-                        return bestMatch;
-                    }
-                } else if (results[0].score && results[0].score < 0.4) {
-                    // If the match is very good, use it
-                    return bestMatch;
-                }
-            }
-
-            // If no good match was found, return the original name
-            return excelName;
-        };
-
-        // Store the findBestPlayerMatch function in state so it can be returned
-        setBestMatchFinder(() => findBestPlayerMatch);
-
-        // Function to sanitize and normalize team names for comparison
-        const normalizeName = (name: string): string => {
-            return name.toLowerCase().trim().replace(/\s+/g, " ");
-        };
-
-        // Function to check if two player names match regardless of order
-        const doNamesMatch = (apiNames: [string, string], predictionNames: [string, string]): boolean => {
-            const [apiName1, apiName2] = apiNames.map(normalizeName);
-            const [predName1, predName2] = predictionNames.map(normalizeName);
-
-            // Check both possible orderings
-            return (apiName1 === predName1 && apiName2 === predName2) ||
-                (apiName1 === predName2 && apiName2 === predName1);
-        };
-
-        // Build a lookup map for match results to use in the table
-        const scoresMap = new Map<string, string>();
-        const setScoresMap = new Map<string, { homeTeam: { set1: number; set2: number; }; awayTeam: { set1: number; set2: number; }; }>();
-
-        // Find matches between API data and our predictions
-        if (matches && predictions.length > 0) {
-            const matchingResults: Array<{
-                apiMatch: ApiMatch,
-                prediction: BettingPrediction,
-                orderMatched: "same" | "reversed"
-            }> = [];
-
-            // Process each prediction to find matching API players
-            predictions.forEach(prediction => {
-                if (!prediction.team1 || !prediction.team2) return;
-
-                // Find the best matching player names from the API
-                const mappedTeam1 = findBestPlayerMatch(prediction.team1);
-                const mappedTeam2 = findBestPlayerMatch(prediction.team2);
-
-                // Now check for matches with these mapped names
-                matches.forEach((match: ApiMatch) => {
-                    // Get team names from API data
-                    const homeTeam = match.home_team_name || "";
-                    const awayTeam = match.away_team_name || "";
-
-                    // Skip if either name is missing
-                    if (!homeTeam || !awayTeam) return;
-
-                    // Use the mapped names for matching
-                    const mappedNames: [string, string] = [mappedTeam1, mappedTeam2];
-                    const apiNames: [string, string] = [homeTeam, awayTeam];
-
-                    if (doNamesMatch(apiNames, mappedNames)) {
-                        // Determine if the order matched or was reversed
-                        const orderType = (normalizeName(homeTeam) === normalizeName(mappedTeam1)) ?
-                            "same" : "reversed";
-
-                        matchingResults.push({
-                            apiMatch: match,
-                            prediction,
-                            orderMatched: orderType
-                        });
-
-                        // Store match results in our lookup map
-                        if (match.home_team_score !== undefined && match.away_team_score !== undefined) {
-                            // Store both possible orders to make lookup easier
-                            const score = `${match.home_team_score}:${match.away_team_score}`;
-                            const reversedScore = `${match.away_team_score}:${match.home_team_score}`;
-
-                            // Store set scores if available
-                            const setScores = {
-                                homeTeam: {
-                                    set1: match.home_team_period_1_score !== undefined ? match.home_team_period_1_score : 0,
-                                    set2: match.home_team_period_2_score !== undefined ? match.home_team_period_2_score : 0
-                                },
-                                awayTeam: {
-                                    set1: match.away_team_period_1_score !== undefined ? match.away_team_period_1_score : 0,
-                                    set2: match.away_team_period_2_score !== undefined ? match.away_team_period_2_score : 0
-                                }
-                            };
-
-                            // Reverse set scores if order is reversed
-                            const reversedSetScores = {
-                                homeTeam: {
-                                    set1: match.away_team_period_1_score !== undefined ? match.away_team_period_1_score : 0,
-                                    set2: match.away_team_period_2_score !== undefined ? match.away_team_period_2_score : 0
-                                },
-                                awayTeam: {
-                                    set1: match.home_team_period_1_score !== undefined ? match.home_team_period_1_score : 0,
-                                    set2: match.home_team_period_2_score !== undefined ? match.home_team_period_2_score : 0
-                                }
-                            };
-
-                            // Use original prediction names for the keys
-                            const key1 = `${normalizeName(prediction.team1)}-${normalizeName(prediction.team2)}`;
-                            scoresMap.set(key1, orderType === "same" ? score : reversedScore);
-                            setScoresMap.set(key1, orderType === "same" ? setScores : reversedSetScores);
-
-                            // For reversed order
-                            const key2 = `${normalizeName(prediction.team2)}-${normalizeName(prediction.team1)}`;
-                            scoresMap.set(key2, orderType === "same" ? reversedScore : score);
-                            setScoresMap.set(key2, orderType === "same" ? reversedSetScores : setScores);
-                        }
-                    }
-                });
-            });
-
-            // Update state with the scores map
-            setApiMatchScores(scoresMap);
-            setApiMatchSetScores(setScoresMap);
-
-            // Log matches for debugging
-            if (matchingResults.length > 0) {
-                console.log(`Found ${matchingResults.length} matches between API and predictions.`);
-            } else {
-                console.log("No matching games found between API data and predictions.");
-            }
-        }
-    };
-
+    // Effect hook that fetches data when selectedDate or predictions change
     useEffect(() => {
         // Skip fetch if no date or predictions
         if (!selectedDate || predictions.length === 0) {
             return;
         }
+
+        // Local function to process API data
+        const processApiData = (matches: ApiMatch[]) => {
+            // Process the matches from API
+            const matchNames: string[] = [];
+            const matchScores: Map<string, string> = new Map();
+            const matchSetScores: Map<string, { homeTeam: { set1: number; set2: number; }; awayTeam: { set1: number; set2: number; }; }> = new Map();
+
+            // Function to find the best player match in the API data
+            const bestMatchFinder = (excelName: string): string => {
+                // Existing implementation
+                // ...
+                if (!excelName) return "";
+
+                // Special case: if the excel name is already in the list, return it
+                const normalizedExcelName = normalizeName(excelName);
+                if (matchNames.includes(normalizedExcelName)) {
+                    return normalizedExcelName;
+                }
+
+                // Extract all parts of player name from Excel
+                const excelParts = extractNameParts(excelName);
+
+                let bestMatch = "";
+                let bestScore = 0;
+
+                // Check each API player name for matches
+                for (const apiName of matchNames) {
+                    const apiParts = extractNameParts(apiName);
+
+                    // Calculate match score - higher is better
+                    let score = 0;
+
+                    // Full match gives highest score
+                    if (normalizeName(apiName) === normalizedExcelName) {
+                        score += 100;
+                    }
+
+                    // Last name matches
+                    if (apiParts.lastName.toLowerCase() === excelParts.lastName.toLowerCase()) {
+                        score += 40;
+                    } else if (apiParts.lastName.toLowerCase().includes(excelParts.lastName.toLowerCase()) ||
+                        excelParts.lastName.toLowerCase().includes(apiParts.lastName.toLowerCase())) {
+                        // Partial last name match
+                        score += 20;
+                    }
+
+                    // First name or initials match
+                    if (apiParts.firstName.toLowerCase() === excelParts.firstName.toLowerCase()) {
+                        score += 30;
+                    } else if (apiParts.firstName.toLowerCase().includes(excelParts.firstName.toLowerCase()) ||
+                        excelParts.firstName.toLowerCase().includes(apiParts.firstName.toLowerCase())) {
+                        // Partial first name match
+                        score += 15;
+                    }
+
+                    // Check initials match
+                    if (apiParts.initials === excelParts.initials) {
+                        score += 20;
+                    }
+
+                    // Update best match if we found a better one
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestMatch = apiName;
+                    }
+                }
+
+                // Only return a match if the score is above a threshold
+                return bestScore >= 20 ? bestMatch : "";
+            };
+
+            // Function to normalize names for comparison
+            const normalizeName = (name: string): string => {
+                return name.toLowerCase().replace(/[^a-z0-9]/g, "");
+            };
+
+            // Helper function to compare name arrays
+            const doNamesMatch = (apiNames: [string, string], predictionNames: [string, string]): boolean => {
+                // If any names are empty, we can't do a reliable match
+                if (!apiNames[0] || !apiNames[1] || !predictionNames[0] || !predictionNames[1]) {
+                    return false;
+                }
+
+                // Normalize all names for comparison
+                const normalizedApiNames = apiNames.map(name => normalizeName(name));
+                const normalizedPredictionNames = predictionNames.map(name => normalizeName(name));
+
+                // Check for direct matches in both directions
+                if (normalizedApiNames[0] === normalizedPredictionNames[0] &&
+                    normalizedApiNames[1] === normalizedPredictionNames[1]) {
+                    return true;
+                }
+
+                if (normalizedApiNames[0] === normalizedPredictionNames[1] &&
+                    normalizedApiNames[1] === normalizedPredictionNames[0]) {
+                    return true;
+                }
+
+                // If no direct matches, try partial matching
+                // Calculate how well names match in both directions
+                const match1 = (normalizedApiNames[0].includes(normalizedPredictionNames[0]) ||
+                    normalizedPredictionNames[0].includes(normalizedApiNames[0])) &&
+                    (normalizedApiNames[1].includes(normalizedPredictionNames[1]) ||
+                        normalizedPredictionNames[1].includes(normalizedApiNames[1]));
+
+                const match2 = (normalizedApiNames[0].includes(normalizedPredictionNames[1]) ||
+                    normalizedPredictionNames[1].includes(normalizedApiNames[0])) &&
+                    (normalizedApiNames[1].includes(normalizedPredictionNames[0]) ||
+                        normalizedPredictionNames[0].includes(normalizedApiNames[1]));
+
+                return match1 || match2;
+            };
+
+            // Process the matches from the API
+            for (const match of matches) {
+                if (match.home_team_name && match.away_team_name) {
+                    // Add to player name list
+                    matchNames.push(match.home_team_name);
+                    matchNames.push(match.away_team_name);
+
+                    // Check if match involves a prediction (using the matching function)
+                    for (const pred of predictions) {
+                        if (pred.team1 && pred.team2 &&
+                            doNamesMatch([match.home_team_name, match.away_team_name], [pred.team1, pred.team2])) {
+                            // Match found between API data and prediction
+                            console.log(`Match found: ${match.home_team_name} vs ${match.away_team_name}`);
+                        }
+                    }
+
+                    // Store match score if available
+                    if (match.home_team_score !== undefined && match.away_team_score !== undefined) {
+                        const scoreKey = `${match.home_team_name} vs ${match.away_team_name}`;
+                        const scoreValue = `${match.home_team_score}-${match.away_team_score}`;
+                        matchScores.set(scoreKey, scoreValue);
+                    }
+
+                    // Store set scores if available
+                    if (match.home_team_period_1_score !== undefined && match.home_team_period_2_score !== undefined &&
+                        match.away_team_period_1_score !== undefined && match.away_team_period_2_score !== undefined) {
+                        const matchKey = `${match.home_team_name} vs ${match.away_team_name}`;
+                        matchSetScores.set(matchKey, {
+                            homeTeam: {
+                                set1: match.home_team_period_1_score,
+                                set2: match.home_team_period_2_score
+                            },
+                            awayTeam: {
+                                set1: match.away_team_period_1_score,
+                                set2: match.away_team_period_2_score
+                            }
+                        });
+                    }
+                }
+            }
+
+            // Update state with processed data
+            setApiPlayerNames(matchNames);
+            setApiMatchScores(matchScores);
+            setApiMatchSetScores(matchSetScores);
+            setBestMatchFinder(() => bestMatchFinder);
+        };
 
         const fetchData = async () => {
             setIsLoading(true);

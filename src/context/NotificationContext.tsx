@@ -29,6 +29,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
     const [notifications, setNotifications] = useState<Notification[]>([]);
 
+    // Function to dismiss a notification
+    const dismissNotification = useCallback((id: string) => {
+        setNotifications((prev) => prev.filter((notification) => notification.id !== id));
+    }, []);
+
     // Function to add a notification
     const showNotification = useCallback(
         (message: string, type: NotificationType = "info", duration = 5000) => {
@@ -50,13 +55,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({
                 }, duration);
             }
         },
-        []
+        [dismissNotification]
     );
-
-    // Function to dismiss a notification
-    const dismissNotification = useCallback((id: string) => {
-        setNotifications((prev) => prev.filter((notification) => notification.id !== id));
-    }, []);
 
     // Value for the context provider
     const contextValue = {
