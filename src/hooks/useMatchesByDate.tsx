@@ -1,6 +1,15 @@
 import { useState, useEffect } from "react";
 import Fuse from "fuse.js";
 
+/**
+ * @deprecated This hook is deprecated. 
+ * Please use the React Query version from 'src/hooks/query/useMatchesByDate.ts' instead.
+ * Example usage: import { useMatchesByDate } from "@/hooks/query";
+ * 
+ * This version uses local storage for caching which is less efficient than React Query.
+ * It will be removed in a future update.
+ */
+
 // Define a type for the API match data
 interface ApiMatch {
     home_team_name: string;

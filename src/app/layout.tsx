@@ -1,10 +1,7 @@
-import { AuthProvider } from "@/context/AuthContext";
-import { NotificationProvider } from "@/context/NotificationContext";
-import { UserProfileProvider } from "@/context/UserProfileContext";
-import Navbar from "@/components/ui/Navbar";
 import { Inter } from "next/font/google";
 import type { Metadata } from "next";
 import "./globals.css";
+import { ClientProviders } from "@/components";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -21,14 +18,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <AuthProvider>
-          <NotificationProvider>
-            <UserProfileProvider>
-              <Navbar />
-              {children}
-            </UserProfileProvider>
-          </NotificationProvider>
-        </AuthProvider>
+        <ClientProviders>
+          {children}
+        </ClientProviders>
       </body>
     </html>
   );

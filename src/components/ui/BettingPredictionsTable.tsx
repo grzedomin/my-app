@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { PieChart } from "react-minimal-pie-chart";
 import { useNotification } from "@/context/NotificationContext";
 import { useSearchParams } from "next/navigation";
-import { useMatchesByDate } from "@/hooks/useMatchesByDate";
+import { useMatchesByDate } from "@/hooks/query";
 import { BettingPrediction, getPredictionsBySportType, getPredictionsByDate, getPredictionDates } from "@/lib/prediction-service";
 
 // Spinner components for loading states
@@ -118,11 +118,10 @@ const BettingPredictionsTable: React.FC = () => {
     // Use our custom hook to fetch matches by date
     const {
         error: matchesError,
-        apiPlayerNames,
         apiMatchScores,
         apiMatchSetScores,
         findBestPlayerMatch
-    } = useMatchesByDate(selectedDate, predictions, selectedSportType);
+    } = useMatchesByDate(selectedDate, selectedSportType, filteredPredictions);
 
     // Show error message when fetching matches fails
     useEffect(() => {
@@ -437,79 +436,109 @@ const BettingPredictionsTable: React.FC = () => {
         }
     };
 
-    // Function to get the final score from API match data if available
+    // Function to get final score from API
     const getFinalScoreFromApi = (prediction: BettingPrediction): string | null => {
-        if (!prediction.team1 || !prediction.team2 || !findBestPlayerMatch) return null;
+        try {
+            // Ensure we have valid player names
+            if (!prediction.team1 || !prediction.team2) return null;
 
-        // Try to match with fuzzy matching first if we have API player names
-        if (apiPlayerNames.length > 0) {
-            // Try to match using findBestPlayerMatch from our hook
-            const mappedTeam1 = findBestPlayerMatch(prediction.team1);
-            const mappedTeam2 = findBestPlayerMatch(prediction.team2);
+            // Create direct key using prediction names
+            const directKey = `${prediction.team1} vs ${prediction.team2}`;
 
-            // Create lookup key with the matched names
-            const key = `${mappedTeam1.toLowerCase().trim()}-${mappedTeam2.toLowerCase().trim()}`;
-            if (apiMatchScores.has(key)) {
-                return apiMatchScores.get(key) || null;
+            // Try direct key first (most reliable match)
+            if (apiMatchScores[directKey]) {
+                return apiMatchScores[directKey];
             }
 
-            // Try reversed order
-            const keyReversed = `${mappedTeam2.toLowerCase().trim()}-${mappedTeam1.toLowerCase().trim()}`;
-            if (apiMatchScores.has(keyReversed)) {
-                // Get the reversed score and swap it back
-                const reversedScore = apiMatchScores.get(keyReversed);
-                if (reversedScore) {
-                    const [score1, score2] = reversedScore.split(":");
-                    return `${score2}:${score1}`;
+            // Get the appropriate player names from the API
+            const matchedTeam1 = findBestPlayerMatch(prediction.team1);
+            const matchedTeam2 = findBestPlayerMatch(prediction.team2);
+
+            if (!matchedTeam1 && !matchedTeam2) return null;
+
+            // Try all possible key combinations
+            const possibleKeys = [
+                directKey,
+                `${prediction.team1} vs ${matchedTeam2}`,
+                `${matchedTeam1} vs ${prediction.team2}`,
+                `${matchedTeam1} vs ${matchedTeam2}`,
+                `${matchedTeam2} vs ${matchedTeam1}`,
+                `${prediction.team2} vs ${prediction.team1}`,
+                `${prediction.team2} vs ${matchedTeam1}`,
+                `${matchedTeam2} vs ${prediction.team1}`
+            ];
+
+            // Check all possible key combinations
+            for (const key of possibleKeys) {
+                if (apiMatchScores[key]) {
+                    // For reversed matches, we need to reverse the score
+                    if (key.startsWith(prediction.team2) || key.startsWith(matchedTeam2)) {
+                        const [score1, score2] = apiMatchScores[key].split('-');
+                        return `${score2}-${score1}`;
+                    }
+                    return apiMatchScores[key];
                 }
             }
+
+            return null;
+        } catch (error) {
+            console.error("Error getting score from API:", error);
+            return null;
         }
-
-        // Fall back to exact name matching if fuzzy matching didn't work
-        const key = `${prediction.team1.toLowerCase().trim().replace(/\s+/g, " ")}-${prediction.team2.toLowerCase().trim().replace(/\s+/g, " ")}`;
-
-        // Check if we have a match in our apiMatchScores map
-        if (apiMatchScores.has(key)) {
-            return apiMatchScores.get(key) || null;
-        }
-
-        // No match found in API data
-        return null;
     };
 
-    // Function to get set scores from API match data if available
+    // Function to get set scores from API
     const getSetScoresFromApi = (prediction: BettingPrediction): { homeTeam: { set1: number; set2: number; }; awayTeam: { set1: number; set2: number; } } | null => {
-        if (!prediction.team1 || !prediction.team2 || !findBestPlayerMatch || !apiMatchSetScores) return null;
+        try {
+            // Ensure we have valid player names
+            if (!prediction.team1 || !prediction.team2) return null;
 
-        // Try to match with fuzzy matching first
-        if (apiPlayerNames.length > 0) {
-            // Try to match using findBestPlayerMatch from our hook
-            const mappedTeam1 = findBestPlayerMatch(prediction.team1);
-            const mappedTeam2 = findBestPlayerMatch(prediction.team2);
+            // Create direct key using prediction names
+            const directKey = `${prediction.team1} vs ${prediction.team2}`;
 
-            // Create lookup key with the matched names
-            const key = `${mappedTeam1.toLowerCase().trim()}-${mappedTeam2.toLowerCase().trim()}`;
-            if (apiMatchSetScores.has(key)) {
-                return apiMatchSetScores.get(key) || null;
+            // Try direct key first (most reliable match)
+            if (apiMatchSetScores[directKey]) {
+                return apiMatchSetScores[directKey];
             }
 
-            // Try reversed order
-            const keyReversed = `${mappedTeam2.toLowerCase().trim()}-${mappedTeam1.toLowerCase().trim()}`;
-            if (apiMatchSetScores.has(keyReversed)) {
-                return apiMatchSetScores.get(keyReversed) || null;
+            // Get the appropriate player names from the API
+            const matchedTeam1 = findBestPlayerMatch(prediction.team1);
+            const matchedTeam2 = findBestPlayerMatch(prediction.team2);
+
+            if (!matchedTeam1 && !matchedTeam2) return null;
+
+            // Try all possible key combinations
+            const possibleKeys = [
+                directKey,
+                `${prediction.team1} vs ${matchedTeam2}`,
+                `${matchedTeam1} vs ${prediction.team2}`,
+                `${matchedTeam1} vs ${matchedTeam2}`,
+                `${matchedTeam2} vs ${matchedTeam1}`,
+                `${prediction.team2} vs ${prediction.team1}`,
+                `${prediction.team2} vs ${matchedTeam1}`,
+                `${matchedTeam2} vs ${prediction.team1}`
+            ];
+
+            // Check all possible key combinations
+            for (const key of possibleKeys) {
+                if (apiMatchSetScores[key]) {
+                    // For reversed matches, we need to swap home and away
+                    if (key.startsWith(prediction.team2) || key.startsWith(matchedTeam2)) {
+                        const originalSetScores = apiMatchSetScores[key];
+                        return {
+                            homeTeam: { ...originalSetScores.awayTeam },
+                            awayTeam: { ...originalSetScores.homeTeam }
+                        };
+                    }
+                    return apiMatchSetScores[key];
+                }
             }
+
+            return null;
+        } catch (error) {
+            console.error("Error getting set scores from API:", error);
+            return null;
         }
-
-        // Fall back to exact name matching
-        const key = `${prediction.team1.toLowerCase().trim().replace(/\s+/g, " ")}-${prediction.team2.toLowerCase().trim().replace(/\s+/g, " ")}`;
-
-        // Check if we have a match in our apiMatchSetScores map
-        if (apiMatchSetScores.has(key)) {
-            return apiMatchSetScores.get(key) || null;
-        }
-
-        // No match found in API data
-        return null;
     };
 
     // Function to format set scores for display: (6:2, 10:3)
@@ -675,7 +704,7 @@ const BettingPredictionsTable: React.FC = () => {
                                         const apiScore = getFinalScoreFromApi(prediction);
 
                                         // Process final score
-                                        let displayScore = "";
+                                        let displayScore = "Pending";
                                         let finalSetScores = "";
 
                                         if (apiScore) {
