@@ -249,7 +249,11 @@ export const useMatchesByDate = (
     const [apiMatchScores, setApiMatchScores] = useState<Map<string, string>>(new Map());
     const [apiMatchSetScores, setApiMatchSetScores] = useState<Map<string, { homeTeam: { set1: number; set2: number; }; awayTeam: { set1: number; set2: number; }; }>>(new Map());
     const [bestMatchFinder, setBestMatchFinder] = useState<(excelName: string) => string>(() => (name: string) => name);
+    console.log("USING HOOK")
+    console.log(selectedDate, 1)
+    console.log(sportType, 2)
 
+    console.log(predictions, 3)
     // Migrate old cache format on first render
     useEffect(() => {
         migrateOldCache();
@@ -282,6 +286,7 @@ export const useMatchesByDate = (
 
     // Effect hook that fetches data when selectedDate or predictions change
     useEffect(() => {
+        console.log("USE EFFECT")
         // Skip fetch if no date or predictions
         if (!selectedDate || predictions.length === 0) {
             return;
@@ -403,7 +408,7 @@ export const useMatchesByDate = (
         const fetchData = async () => {
             setIsLoading(true);
             setError(null);
-
+            console.log("FETCHING DATA")
             try {
                 // Convert the date format for API call
                 const formattedDate = convertDateFormat(selectedDate);

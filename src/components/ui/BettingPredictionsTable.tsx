@@ -160,49 +160,17 @@ const BettingPredictionsTable: React.FC = () => {
         findBestPlayerMatch
     } = useMatchesByDate(selectedDate, selectedSportType, displayedPredictions);
 
-    // Log all predictions data once when loaded for debugging
+    // Debug logs to see what's in the API data
     useEffect(() => {
-        if (displayedPredictions.length > 0) {
-            console.log(`All ${selectedBetType} predictions:`, displayedPredictions);
-
-            // Check for missing values in critical fields
-            const missingScorePredictions = displayedPredictions.filter(p => !p.scorePrediction).length;
-            const missingBetOn = displayedPredictions.filter(p => !p.betOn).length;
-
-            if (missingScorePredictions > 0 || missingBetOn > 0) {
-                console.log(`Missing data: ${missingScorePredictions} without scorePrediction, ${missingBetOn} without betOn`);
-
-                // Log the first prediction with missing score prediction for debugging
-                const firstMissingScorePrediction = displayedPredictions.find(p => !p.scorePrediction);
-                if (firstMissingScorePrediction) {
-                    console.log("Example of prediction with missing score prediction:",
-                        JSON.stringify(firstMissingScorePrediction, null, 2));
-                }
-
-                // Log the first prediction with missing bet on for debugging
-                const firstMissingBetOn = displayedPredictions.find(p => !p.betOn);
-                if (firstMissingBetOn) {
-                    console.log("Example of prediction with missing bet on:",
-                        JSON.stringify(firstMissingBetOn, null, 2));
-                }
-            }
-
-            // Detailed logging of the first item to see all available fields
-            if (displayedPredictions[0]) {
-                console.log("First prediction data structure:", JSON.stringify(displayedPredictions[0], null, 2));
-
-                // Check all fields that might contain score prediction or value bet data
-                console.log("Possible score prediction fields:", {
-                    scorePrediction: displayedPredictions[0].scorePrediction,
-                    betOn: displayedPredictions[0].betOn,
-                    valuePercent: displayedPredictions[0].valuePercent
-                });
-
-                // Log all keys to see what's actually in the object
-                console.log("All keys in prediction:", Object.keys(displayedPredictions[0]));
-            }
+        console.log("API Match Scores structure:", apiMatchScores);
+        console.log("API Match Scores type:", typeof apiMatchScores);
+        console.log("Is Map?", apiMatchScores instanceof Map);
+        // Output example key/value if available
+        const firstKey = Object.keys(apiMatchScores)[0];
+        if (firstKey) {
+            console.log("Example key:", firstKey, "Value:", apiMatchScores[firstKey]);
         }
-    }, [displayedPredictions, selectedBetType]);
+    }, [apiMatchScores]);
 
     // Show error messages when fetching fails
     useEffect(() => {
@@ -238,7 +206,6 @@ const BettingPredictionsTable: React.FC = () => {
 
                 let datesData: string[];
                 if (cachedDatesData && (currentTime - cachedDatesData.timestamp) < CACHE_EXPIRY_MS) {
-                    console.log(`Using cached dates for ${cacheKey}`);
                     datesData = cachedDatesData.dates;
                 } else {
                     setLoadingStatus(`Fetching available dates...`);
@@ -402,7 +369,6 @@ const BettingPredictionsTable: React.FC = () => {
             const predWinner = predTeam1Sets > predTeam2Sets ? 1 : 2;
             const actualWinner = actualTeam1Sets > actualTeam2Sets ? 1 : 2;
 
-            console.log(`Comparing scores: Pred ${normalizedPredScore} (winner: ${predWinner}) vs Actual ${normalizedActualScore} (winner: ${actualWinner})`);
 
             return predWinner === actualWinner;
         } catch (err) {
@@ -423,8 +389,8 @@ const BettingPredictionsTable: React.FC = () => {
             const directKey = `${prediction.team1} vs ${prediction.team2}`;
 
             // Try direct key first (most reliable match)
-            if (apiMatchScores.has(directKey)) {
-                return apiMatchScores.get(directKey) || null;
+            if (directKey in apiMatchScores) {
+                return apiMatchScores[directKey] || null;
             }
 
             // Get the appropriate player names from the API
@@ -447,13 +413,13 @@ const BettingPredictionsTable: React.FC = () => {
 
             // Check all possible key combinations
             for (const key of possibleKeys) {
-                if (apiMatchScores.has(key)) {
+                if (key in apiMatchScores) {
                     // For reversed matches, we need to reverse the score
                     if (key.startsWith(prediction.team2) || key.startsWith(matchedTeam2)) {
-                        const [score1, score2] = (apiMatchScores.get(key) || "").split('-');
+                        const [score1, score2] = (apiMatchScores[key] || "").split('-');
                         return `${score2}-${score1}`;
                     }
-                    return apiMatchScores.get(key) || null;
+                    return apiMatchScores[key] || null;
                 }
             }
 
@@ -476,8 +442,8 @@ const BettingPredictionsTable: React.FC = () => {
             const directKey = `${prediction.team1} vs ${prediction.team2}`;
 
             // Try direct key first (most reliable match)
-            if (apiMatchSetScores.has(directKey)) {
-                return apiMatchSetScores.get(directKey) || null;
+            if (directKey in apiMatchSetScores) {
+                return apiMatchSetScores[directKey] || null;
             }
 
             // Get the appropriate player names from the API
@@ -500,10 +466,10 @@ const BettingPredictionsTable: React.FC = () => {
 
             // Check all possible key combinations
             for (const key of possibleKeys) {
-                if (apiMatchSetScores.has(key)) {
+                if (key in apiMatchSetScores) {
                     // For reversed matches, we need to swap home and away
                     if (key.startsWith(prediction.team2) || key.startsWith(matchedTeam2)) {
-                        const originalSetScores = apiMatchSetScores.get(key);
+                        const originalSetScores = apiMatchSetScores[key];
                         if (originalSetScores) {
                             return {
                                 homeTeam: { ...originalSetScores.awayTeam },
@@ -511,7 +477,7 @@ const BettingPredictionsTable: React.FC = () => {
                             };
                         }
                     }
-                    return apiMatchSetScores.get(key) || null;
+                    return apiMatchSetScores[key] || null;
                 }
             }
 
@@ -793,7 +759,6 @@ const BettingPredictionsTable: React.FC = () => {
                                     {displayedPredictions.map((prediction, index) => {
                                         // Get API score if available
                                         const apiScore = getFinalScoreFromApi(prediction);
-
                                         // Process final score
                                         let displayScore = "Pending";
                                         let finalSetScores = "";
@@ -950,15 +915,7 @@ const BettingPredictionsTable: React.FC = () => {
                         <div className="md:hidden px-0 sm:px-0 w-full">
                             {displayedPredictions.map((prediction, index) => {
                                 // Enhanced logging to debug prediction data
-                                console.log(`Prediction ${index} data:`, {
-                                    team1: prediction.team1,
-                                    team2: prediction.team2,
-                                    scorePrediction: prediction.scorePrediction,
-                                    betOn: prediction.betOn,
-                                    valuePercent: prediction.valuePercent,
-                                    betType: prediction.betType,
-                                    allKeys: Object.keys(prediction)
-                                });
+
 
                                 // Get API score if available
                                 const apiScore = getFinalScoreFromApi(prediction);
