@@ -288,12 +288,17 @@ const BettingPredictionsTable: React.FC = () => {
         if (!predictionScore || !actualScore) return false;
 
         try {
-            // Parse scores - assuming format like "2:0" or "1:2"
-            const [predTeam1Sets, predTeam2Sets] = predictionScore.split(":").map(Number);
-            const [actualTeam1Sets, actualTeam2Sets] = actualScore.split(":").map(Number);
+            // First normalize the score formats - both might use ":" or "-" as separators
+            const normalizedPredScore = predictionScore.replace(/-/g, ":");
+            const normalizedActualScore = actualScore.replace(/-/g, ":");
+
+            // Parse scores - now assuming format is normalized to "2:0" or "1:2"
+            const [predTeam1Sets, predTeam2Sets] = normalizedPredScore.split(":").map(s => parseInt(s.trim(), 10));
+            const [actualTeam1Sets, actualTeam2Sets] = normalizedActualScore.split(":").map(s => parseInt(s.trim(), 10));
 
             if (isNaN(predTeam1Sets) || isNaN(predTeam2Sets) ||
                 isNaN(actualTeam1Sets) || isNaN(actualTeam2Sets)) {
+                console.warn("Invalid score format:", predictionScore, actualScore);
                 return false;
             }
 
@@ -301,9 +306,11 @@ const BettingPredictionsTable: React.FC = () => {
             const predWinner = predTeam1Sets > predTeam2Sets ? 1 : 2;
             const actualWinner = actualTeam1Sets > actualTeam2Sets ? 1 : 2;
 
+            console.log(`Comparing scores: Pred ${normalizedPredScore} (winner: ${predWinner}) vs Actual ${normalizedActualScore} (winner: ${actualWinner})`);
+
             return predWinner === actualWinner;
         } catch (err) {
-            console.error("Error comparing scores:", err);
+            console.error("Error comparing scores:", err, predictionScore, actualScore);
             return false;
         }
     };
@@ -448,16 +455,21 @@ const BettingPredictionsTable: React.FC = () => {
             return "";
         }
 
-        // If no API score, use existing logic for prediction's finalScore
-        if (!apiScore) {
-            return prediction.finalScore && isBetSuccessful(prediction)
-                ? "bg-green-700 text-green-100"
-                : "bg-green-900 text-green-100";
+        // If we have an API score, check if prediction is correct
+        if (apiScore && prediction.scorePrediction) {
+            // Compare API score with prediction - only apply green if correct
+            if (compareTennisScores(prediction.scorePrediction, apiScore)) {
+                return "bg-green-600 text-green-100";
+            }
+            return "";
         }
 
-        // Compare API score with prediction
-        const isCorrect = compareTennisScores(prediction.scorePrediction, apiScore);
-        return isCorrect ? "bg-green-600 text-green-100" : "bg-green-800 text-green-100";
+        // If using finalScore from prediction data, check if successful
+        if (prediction.finalScore) {
+            return isBetSuccessful(prediction) ? "bg-green-600 text-green-100" : "";
+        }
+
+        return "";
     };
 
     // Use a custom time-based sort for displayed predictions
@@ -708,9 +720,9 @@ const BettingPredictionsTable: React.FC = () => {
                                                         <div className="font-bold text-gray-400">-</div>
                                                     ) : (
                                                         <>
-                                                            <div className="font-bold">{displayScore}</div>
+                                                            <div className={`font-bold ${getScoreClass(prediction, apiScore) ? "text-green-100" : "text-gray-200"}`}>{displayScore}</div>
                                                             {finalSetScores && (
-                                                                <div className="text-xs text-green-100 mt-1">{finalSetScores}</div>
+                                                                <div className={`text-xs mt-1 ${getScoreClass(prediction, apiScore) ? "text-green-100" : "text-gray-400"}`}>{finalSetScores}</div>
                                                             )}
                                                         </>
                                                     )}
@@ -775,10 +787,10 @@ const BettingPredictionsTable: React.FC = () => {
                                         className={`mb-4 p-4 rounded-lg border ${apiScore ?
                                             (compareTennisScores(prediction.scorePrediction, apiScore) ?
                                                 "border-green-600 bg-green-700" :
-                                                "border-green-700 bg-green-800") :
+                                                "border-gray-700 bg-gray-800") :
                                             (prediction.finalScore && isBetSuccessful(prediction) ?
                                                 "border-green-600 bg-green-700" :
-                                                "border-green-700 bg-green-900")
+                                                "border-gray-700 bg-gray-800")
                                             }`}
                                         ref={isLastCard ? lastElementRef : null}
                                     >
@@ -844,11 +856,11 @@ const BettingPredictionsTable: React.FC = () => {
                                                     <div className="font-bold text-gray-400 mt-1">-</div>
                                                 ) : (
                                                     <>
-                                                        <div className="font-bold text-green-200">
+                                                        <div className={`font-bold ${getScoreClass(prediction, apiScore) ? "text-green-100" : "text-gray-200"}`}>
                                                             {displayScore}
                                                         </div>
                                                         {finalSetScores && (
-                                                            <div className="text-xs text-green-100">{finalSetScores}</div>
+                                                            <div className={`text-xs ${getScoreClass(prediction, apiScore) ? "text-green-100" : "text-gray-400"}`}>{finalSetScores}</div>
                                                         )}
                                                     </>
                                                 )}
