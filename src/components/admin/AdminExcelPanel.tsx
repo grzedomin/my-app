@@ -13,6 +13,7 @@ import * as XLSX from "xlsx";
 import AdminOnly from "@/components/AdminOnly";
 import { useSearchParams } from "next/navigation";
 import { BettingPrediction, FileData } from "@/types";
+import { migrateExcelFilesToFirestore } from "@/lib/migrate-excel-data";
 
 interface AdminExcelPanelProps {
     onFileProcessed: (data: BettingPrediction[]) => void;
@@ -470,6 +471,18 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
                     fileInputRef.current.value = "";
                 }
                 setSelectedFiles(null);
+
+                // Automatically run migration after successful upload
+                try {
+                    showNotification("Starting automatic file migration...", "info");
+                    const migrationResult = await migrateExcelFilesToFirestore(
+                        (message, percentage) => console.log(`Migration progress: ${message} - ${percentage}%`)
+                    );
+                    showNotification(`Migration completed: ${migrationResult.message}`, "success");
+                } catch (migrationError) {
+                    console.error("Error during automatic migration:", migrationError);
+                    showNotification("File upload succeeded but automatic migration failed. Please run migration manually.", "warning");
+                }
             } else {
                 showNotification("No files were uploaded successfully", "error");
             }
