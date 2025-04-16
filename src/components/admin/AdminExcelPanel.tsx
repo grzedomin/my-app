@@ -188,12 +188,21 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
         // Extract file name without extension
         const fileNameWithoutExt = fileName.split(".")[0];
 
-        // Check for tennis pattern
+        // Check for tennis variants
+        if (fileNameWithoutExt.startsWith("tennis-spread-")) {
+            return "tennis";
+        }
+        if (fileNameWithoutExt.startsWith("tennis-kelly-")) {
+            return "tennis";
+        }
         if (fileNameWithoutExt.startsWith("tennis-")) {
             return "tennis";
         }
 
-        // Check for table tennis pattern
+        // Check for table tennis variants
+        if (fileNameWithoutExt.startsWith("table-tennis-kelly-")) {
+            return "table-tennis";
+        }
         if (fileNameWithoutExt.startsWith("table-tennis-")) {
             return "table-tennis";
         }
@@ -208,10 +217,25 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
 
         // Define the expected format for both sport types
         const datePattern = "\\d{2}-\\d{2}-\\d{4}"; // Format: DD-MM-YYYY
-        const tennisPattern = new RegExp(`^tennis-${datePattern}$`);
-        const tableTennisPattern = new RegExp(`^table-tennis-${datePattern}$`);
 
-        return tennisPattern.test(fileNameWithoutExt) || tableTennisPattern.test(fileNameWithoutExt);
+        // Regular tennis format
+        const tennisPattern = new RegExp(`^tennis-${datePattern}$`);
+
+        // Tennis with bet types
+        const tennisSpreadPattern = new RegExp(`^tennis-spread-${datePattern}$`);
+        const tennisKellyPattern = new RegExp(`^tennis-kelly-${datePattern}$`);
+
+        // Table tennis formats
+        const tableTennisPattern = new RegExp(`^table-tennis-${datePattern}$`);
+        const tableTennisKellyPattern = new RegExp(`^table-tennis-kelly-${datePattern}$`);
+
+        return (
+            tennisPattern.test(fileNameWithoutExt) ||
+            tableTennisPattern.test(fileNameWithoutExt) ||
+            tennisSpreadPattern.test(fileNameWithoutExt) ||
+            tennisKellyPattern.test(fileNameWithoutExt) ||
+            tableTennisKellyPattern.test(fileNameWithoutExt)
+        );
     };
 
     // Function to suggest valid file names based on current date
@@ -224,7 +248,10 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
         const formattedDate = `${day}-${month}-${year}`;
         return [
             `tennis-${formattedDate}.xlsx`,
-            `table-tennis-${formattedDate}.xlsx`
+            `tennis-spread-${formattedDate}.xlsx`,
+            `tennis-kelly-${formattedDate}.xlsx`,
+            `table-tennis-${formattedDate}.xlsx`,
+            `table-tennis-kelly-${formattedDate}.xlsx`
         ];
     };
 
@@ -360,11 +387,17 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
         const invalidNameFiles = fileArray.filter(file => !isValidFileNameFormat(file.name));
 
         if (invalidNameFiles.length > 0) {
-            const expectedFormats = ["tennis-DD-MM-YYYY.xlsx", "table-tennis-DD-MM-YYYY.xlsx"];
-            const suggestedExamples = suggestValidFileNames().join(" or ");
+            const expectedFormats = [
+                "tennis-DD-MM-YYYY.xlsx",
+                "tennis-spread-DD-MM-YYYY.xlsx",
+                "tennis-kelly-DD-MM-YYYY.xlsx",
+                "table-tennis-DD-MM-YYYY.xlsx",
+                "table-tennis-kelly-DD-MM-YYYY.xlsx"
+            ];
+            const suggestedExamples = suggestValidFileNames().join(", ");
 
             setUploadError(`File names must follow one of these formats: ${expectedFormats.join(", ")}. Examples: ${suggestedExamples}`);
-            showNotification(`Invalid file name format. Expected formats: ${expectedFormats.join(" or ")}`, "error");
+            showNotification(`Invalid file name format. Please use one of the approved formats`, "error");
 
             // List invalid files
             if (invalidNameFiles.length <= 3) {
@@ -547,7 +580,12 @@ const AdminExcelPanel: React.FC<AdminExcelPanelProps> = ({
                                 ref={fileInputRef}
                             />
                             <p className="mt-1 text-xs text-gray-400">
-                                File names must be in format: <span className="font-mono">tennis-DD-MM-YYYY.xlsx</span> or <span className="font-mono">table-tennis-DD-MM-YYYY.xlsx</span>
+                                File names must be in one of these formats:
+                                <span className="font-mono ml-1">tennis-DD-MM-YYYY.xlsx</span>,
+                                <span className="font-mono ml-1">tennis-spread-DD-MM-YYYY.xlsx</span>,
+                                <span className="font-mono ml-1">tennis-kelly-DD-MM-YYYY.xlsx</span>,
+                                <span className="font-mono ml-1">table-tennis-DD-MM-YYYY.xlsx</span>, or
+                                <span className="font-mono ml-1">table-tennis-kelly-DD-MM-YYYY.xlsx</span>
                             </p>
                             <p className="mt-1 text-xs text-blue-400">
                                 Example: {suggestValidFileNames().join(" or ")}

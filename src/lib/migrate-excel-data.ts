@@ -29,12 +29,36 @@ function isErrorWithMessage(error: unknown): error is ErrorWithMessage {
 }
 
 /**
- * Extract date from file name in format tennis-DD-MM-YYYY or table-tennis-DD-MM-YYYY
- * and convert to standardized format like "10th Apr 2025"
+ * Extract date and bet type from file name in format:
+ * - tennis-DD-MM-YYYY (normal)
+ * - tennis-spread-DD-MM-YYYY (spread)
+ * - tennis-kelly-DD-MM-YYYY (kelly)
+ * - table-tennis-DD-MM-YYYY (normal)
+ * - table-tennis-kelly-DD-MM-YYYY (kelly)
+ * 
+ * Returns standardized date format like "10th Apr 2025" and bet type
  */
-function extractDateFromFileName(fileName: string): string | null {
-    // Extract date from patterns like "tennis-10-04-2025" or "table-tennis-10-04-2025"
-    const datePattern = /(?:tennis|table-tennis)-(\d{1,2})-(\d{1,2})-(\d{4})/i;
+function extractDateAndTypeFromFileName(fileName: string): { date: string | null, betType: string } {
+    // Extract bet type first
+    let betType = "normal";
+
+    if (fileName.includes("-spread-")) {
+        betType = "spread";
+    } else if (fileName.includes("-kelly-")) {
+        betType = "kelly";
+    }
+
+    // Extract date based on different patterns
+    let datePattern: RegExp;
+
+    if (betType === "spread") {
+        datePattern = /tennis-spread-(\d{1,2})-(\d{1,2})-(\d{4})/i;
+    } else if (betType === "kelly") {
+        datePattern = /(?:tennis|table-tennis)-kelly-(\d{1,2})-(\d{1,2})-(\d{4})/i;
+    } else {
+        datePattern = /(?:tennis|table-tennis)-(\d{1,2})-(\d{1,2})-(\d{4})/i;
+    }
+
     const match = fileName.match(datePattern);
 
     if (match && match.length === 4) {
@@ -58,14 +82,17 @@ function extractDateFromFileName(fileName: string): string | null {
                 const monthName = date.toLocaleString('en', { month: 'short' });
 
                 // Final formatted date
-                return `${dayNum}${suffix} ${monthName} ${year}`;
+                return {
+                    date: `${dayNum}${suffix} ${monthName} ${year}`,
+                    betType
+                };
             }
         } catch (e) {
             console.error("Error parsing date:", e);
         }
     }
 
-    return null;
+    return { date: null, betType };
 }
 
 /**
@@ -123,28 +150,118 @@ export const migrateExcelFilesToFirestore = async (
                 const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
                 // Extract standardized date from file name
-                const standardDateStr = extractDateFromFileName(file.fileName);
+                const { date: standardDateStr, betType } = extractDateAndTypeFromFileName(file.fileName);
 
                 // Transform to predictions
                 const predictions = jsonData.map((row) => {
                     const typedRow = row as Record<string, unknown>;
-                    return {
-                        date: typedRow.Date || file.fileDate || "",
-                        team1: typedRow.Team_1 || "",
-                        oddTeam1: parseFloat(String(typedRow.Odd_1)) || 0,
-                        team2: typedRow.Team_2 || "",
-                        oddTeam2: parseFloat(String(typedRow.Odd_2)) || 0,
-                        scorePrediction: typedRow.Score_prediction || "",
-                        confidence: parseFloat(String(typedRow.Confidence)) || 0,
-                        bettingPredictionTeam1Win: parseFloat(String(typedRow.Betting_predictions_team_1_win)) || 0,
-                        bettingPredictionTeam2Win: parseFloat(String(typedRow.Betting_predictions_team_2_win)) || 0,
-                        finalScore: typedRow.Final_Score || "",
+
+                    // Log the raw row data for debugging
+                    console.log("Raw Excel row data:", JSON.stringify(typedRow));
+
+                    // Get all column names for debugging - convert to lowercase for easier comparison
+                    const columnNames = Object.keys(typedRow);
+                    console.log("Excel file columns:", columnNames.join(", "));
+
+                    // Direct access to the exact column names from the Excel file
+                    const directScorePrediction = typedRow["Score_prediction"];
+                    const directValueBet = typedRow["Value_Bet"];
+
+                    console.log("Direct column access results:", {
+                        "Score_prediction": directScorePrediction,
+                        "Value_Bet": directValueBet
+                    });
+
+                    // More robust way to find fields with various naming formats
+                    const getFieldValue = (possibleKeys: string[], defaultValue: string = ""): string => {
+                        for (const key of possibleKeys) {
+                            // Check exact match
+                            if (typedRow[key] !== undefined) {
+                                console.log(`Found exact match for key "${key}": ${typedRow[key]}`);
+                                return String(typedRow[key] || defaultValue);
+                            }
+
+                            // Check case-insensitive match
+                            const lowerKey = key.toLowerCase();
+                            const matchingKey = columnNames.find(col => col.toLowerCase() === lowerKey);
+                            if (matchingKey && typedRow[matchingKey] !== undefined) {
+                                console.log(`Found case-insensitive match for key "${key}" as "${matchingKey}": ${typedRow[matchingKey]}`);
+                                return String(typedRow[matchingKey] || defaultValue);
+                            }
+                        }
+                        return defaultValue;
+                    };
+
+                    // Find numeric values
+                    const getNumericValue = (possibleKeys: string[], defaultValue: number = 0): number => {
+                        const stringValue = getFieldValue(possibleKeys, "");
+                        if (!stringValue) return defaultValue;
+
+                        const parsedValue = parseFloat(stringValue);
+                        return isNaN(parsedValue) ? defaultValue : parsedValue;
+                    };
+
+                    // Find score prediction using various possible column names - EXACT MATCH FIRST
+                    const scorePrediction = typedRow["Score_prediction"] !== undefined
+                        ? String(typedRow["Score_prediction"])
+                        : getFieldValue([
+                            "Score_prediction",
+                            "Score_Prediction",
+                            "Score Prediction",
+                            "ScorePrediction"
+                        ]);
+                    console.log("Found score prediction:", scorePrediction);
+
+                    // Find bet on / value bet using various possible column names - EXACT MATCH FIRST
+                    const betOn = typedRow["Value_Bet"] !== undefined
+                        ? String(typedRow["Value_Bet"])
+                        : getFieldValue([
+                            "Value_Bet",
+                            "Value Bet",
+                            "ValueBet",
+                            "Bet_On",
+                            "BetOn",
+                            "bet_on",
+                            "Bet On"
+                        ]);
+                    console.log("Found bet on value:", betOn);
+
+                    // Basic prediction data
+                    const predictionData = {
+                        date: getFieldValue(["Date"], file.fileDate || ""),
+                        team1: getFieldValue(["Team_1", "Team1"]),
+                        oddTeam1: getNumericValue(["Odd_1", "Odd1", "Odd"]),
+                        team2: getFieldValue(["Team_2", "Team2"]),
+                        oddTeam2: getNumericValue(["Odd_2", "Odd2"]),
+                        scorePrediction: scorePrediction,
+                        confidence: getNumericValue(["Confidence"]),
+                        bettingPredictionTeam1Win: getNumericValue(["Betting_predictions_team_1_win", "Team1Win"]),
+                        bettingPredictionTeam2Win: getNumericValue(["Betting_predictions_team_2_win", "Team2Win"]),
+                        finalScore: getFieldValue(["Final_Score", "FinalScore"]),
                         sportType: file.sportType || "tennis",
                         sourceFile: file.filePath,
                         fileId: file.id,
                         processedAt: Timestamp.now(),
-                        standardDate: standardDateStr || ""  // Add standardized date from file name
+                        standardDate: standardDateStr || "",
+                        betType
                     };
+
+                    // Add bet type specific fields
+                    if (betType === "kelly") {
+                        return {
+                            ...predictionData,
+                            optimalStakePart: getNumericValue(["Optimal_Stake_Part", "OptimalStakePart", "Optimal Stake", "Optimal"]),
+                            betOn: betOn
+                        };
+                    } else if (betType === "spread") {
+                        return {
+                            ...predictionData,
+                            valuePercent: getNumericValue(["Value_Percent", "ValuePercent", "Value Percent", "value_percent"]),
+                            betOn: betOn
+                        };
+                    }
+
+                    return predictionData;
                 });
 
                 // Split processing into smaller batches to prevent timeouts
@@ -160,9 +277,22 @@ export const migrateExcelFilesToFirestore = async (
                         processedAt: Timestamp.now()
                     });
 
-                    // Determine the appropriate collection based on sport type
+                    // Determine the appropriate collection based on sport type and bet type
                     const sportType = file.sportType?.toLowerCase().trim() || "tennis";
-                    const collectionName = sportType === "table-tennis" ? "table-tennis" : "tennis";
+                    let collectionName: string;
+
+                    if (sportType === "table-tennis") {
+                        collectionName = betType === "kelly" ? "table-tennis-kelly" : "table-tennis";
+                    } else {
+                        // Tennis
+                        if (betType === "spread") {
+                            collectionName = "tennis-spread";
+                        } else if (betType === "kelly") {
+                            collectionName = "tennis-kelly";
+                        } else {
+                            collectionName = "tennis";
+                        }
+                    }
 
                     // Split into multiple smaller batches (Firestore batch limit is 500)
                     const BATCH_SIZE = 100; // Use smaller batches to avoid issues

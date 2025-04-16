@@ -2,6 +2,7 @@ import { db } from "./firebase";
 import { collection, query, getDocs, limit, startAfter, orderBy, doc, getDoc, where } from "firebase/firestore";
 
 export interface BettingPrediction {
+    betType: string;
     date: string;
     team1: string;
     oddTeam1: number;
@@ -16,10 +17,46 @@ export interface BettingPrediction {
     standardDate?: string;
     fileId?: string;
     sourceFile?: string;
+    // For Kelly and Spread values
+    optimalStakePart?: number;
+    betOn?: string;
+    valuePercent?: number;
+    // For Spread values specifically
+    moneyLine1?: number;
+    moneyLine2?: number;
 }
 
+export type BetType = "normal" | "spread" | "kelly";
+
 /**
- * Get collection name based on sport type
+ * Get collection name based on sport type and bet type
+ */
+const getCollectionName = (sportType: string, betType: BetType = "normal"): string => {
+    // Normalize sport type to ensure consistency
+    const normalizedType = sportType.toLowerCase().trim();
+
+    // Handle table tennis - only has normal and kelly collections
+    if (normalizedType === "table-tennis" || normalizedType === "table tennis") {
+        if (betType === "kelly") {
+            return "table-tennis-kelly";
+        }
+        return "table-tennis"; // Default for normal bets
+    }
+
+    // Handle tennis collections
+    if (betType === "spread") {
+        return "tennis-spread";
+    } else if (betType === "kelly") {
+        return "tennis-kelly";
+    }
+
+    // Default to tennis for any other value
+    return "tennis";
+};
+
+/**
+ * Get collection name based on sport type (legacy function for backward compatibility)
+ * @deprecated Use getCollectionName instead. Kept for backward compatibility with existing code.
  */
 const getSportCollection = (sportType: string): string => {
     // Normalize sport type to ensure consistency
@@ -35,11 +72,11 @@ const getSportCollection = (sportType: string): string => {
 };
 
 /**
- * Get unique dates for predictions of a specific sport type
+ * Get unique dates for predictions of a specific sport type and bet type
  */
-export const getPredictionDates = async (sportType: string): Promise<string[]> => {
+export const getPredictionDates = async (sportType: string, betType: BetType = "normal"): Promise<string[]> => {
     try {
-        const collectionName = getSportCollection(sportType);
+        const collectionName = getCollectionName(sportType, betType);
         const q = query(collection(db, collectionName));
 
         const querySnapshot = await getDocs(q);
@@ -88,15 +125,18 @@ export const getPredictionDates = async (sportType: string): Promise<string[]> =
 };
 
 /**
- * Get predictions by sport type with pagination
+ * Get predictions by sport type and bet type with pagination
  */
 export const getPredictionsBySportType = async (
     sportType: string,
     pageSize: number = 20,
-    lastDocId?: string
+    lastDocId?: string,
+    betType: BetType = "normal"
 ): Promise<{ predictions: BettingPrediction[], lastDocId: string | null, hasMore: boolean }> => {
     try {
-        const collectionName = getSportCollection(sportType);
+        const collectionName = getCollectionName(sportType, betType);
+        console.log(`Fetching predictions from collection: ${collectionName}`);
+
         let q;
 
         // Create a base query with ordering
@@ -146,6 +186,18 @@ export const getPredictionsBySportType = async (
 
             const prediction = doc.data() as BettingPrediction;
 
+            // Debug logging for first few records
+            if (predictions.length < 3) {
+                console.log(`Prediction from Firestore (${collectionName}):`, {
+                    id: doc.id,
+                    fields: Object.keys(prediction),
+                    scorePrediction: prediction.scorePrediction,
+                    betOn: prediction.betOn,
+                    team1: prediction.team1,
+                    team2: prediction.team2
+                });
+            }
+
             // Skip entries that are just tournament names without team data
             const isTournamentOnly = !prediction.team1 || !prediction.team2 ||
                 (prediction.team1.trim() === "" && prediction.team2.trim() === "");
@@ -163,6 +215,16 @@ export const getPredictionsBySportType = async (
             }
         });
 
+        // Debug logging
+        console.log(`Fetched ${predictions.length} predictions from ${collectionName}`);
+        if (predictions.length > 0) {
+            console.log("Sample prediction data:", {
+                scorePrediction: predictions[0].scorePrediction,
+                betOn: predictions[0].betOn,
+                valuePercent: predictions[0].valuePercent
+            });
+        }
+
         // Determine if there are more results available
         const hasMore = querySnapshot.size >= pageSize;
 
@@ -178,16 +240,19 @@ export const getPredictionsBySportType = async (
 };
 
 /**
- * Get predictions by date and sport type with pagination
+ * Get predictions by date, sport type, and bet type with pagination
  */
 export const getPredictionsByDate = async (
     date: string,
     sportType: string,
     pageSize: number = 20,
-    lastDocId?: string
+    lastDocId?: string,
+    betType: BetType = "normal"
 ): Promise<{ predictions: BettingPrediction[], lastDocId: string | null, hasMore: boolean }> => {
     try {
-        const collectionName = getSportCollection(sportType);
+        const collectionName = getCollectionName(sportType, betType);
+        console.log(`Fetching predictions by date from collection: ${collectionName}, date: ${date}`);
+
         let q;
 
         // For date filtering we have two approaches:
@@ -256,59 +321,90 @@ export const getPredictionsByDate = async (
             }
 
             querySnapshot = await getDocs(q);
+
+            // Now we have to filter on the client for the specific date
+            // We're looking for dates that contain the requested date
         }
 
         const predictions: BettingPrediction[] = [];
-        const teamPairs = new Set<string>(); // Track unique team pairs to avoid duplicates
+        const teamPairs = new Set<string>(); // To prevent duplicates
         let newLastDocId: string | null = null;
-        let documentsProcessed = 0;
+        // Flag to track whether we're using client-side filtering
+        const needsClientFiltering = querySnapshot.empty || !querySnapshot.metadata.fromCache;
 
-        // Process until we get pageSize matches or run out of documents
-        for (const docSnap of querySnapshot.docs) {
-            documentsProcessed++;
-            newLastDocId = docSnap.id;
+        querySnapshot.forEach((doc) => {
+            // Store the last document ID for next pagination
+            newLastDocId = doc.id;
 
-            const prediction = docSnap.data() as BettingPrediction;
+            const prediction = doc.data() as BettingPrediction;
+
+            // Debug logging for first few records
+            if (predictions.length < 3) {
+                console.log(`Prediction from Firestore by date (${collectionName}):`, {
+                    id: doc.id,
+                    fields: Object.keys(prediction),
+                    scorePrediction: prediction.scorePrediction,
+                    betOn: prediction.betOn,
+                    team1: prediction.team1,
+                    team2: prediction.team2
+                });
+            }
 
             // Skip entries that are just tournament names without team data
             const isTournamentOnly = !prediction.team1 || !prediction.team2 ||
                 (prediction.team1.trim() === "" && prediction.team2.trim() === "");
             if (isTournamentOnly) {
-                continue;
+                return;
             }
 
-            // Match by date (only needed for the non-standardDate approach):
-            // 1. Check if the prediction's date contains our target date
-            // 2. Or check if standardDate matches exactly
-            const dateMatches =
-                (prediction.standardDate && prediction.standardDate === date) ||
-                (prediction.date && prediction.date.includes(date));
+            // If we had to use the client-side filtering approach, check date here
+            if (needsClientFiltering) {
+                // No server-side filters were applied, so we need to check manually
+                let isMatch = false;
 
-            if (dateMatches) {
-                // Create a unique key based on both team names to identify duplicates
-                const teamKey = `${prediction.team1.toLowerCase()}-${prediction.team2.toLowerCase()}`;
-
-                // Only add if we haven't seen this team pair before
-                if (!teamPairs.has(teamKey)) {
-                    teamPairs.add(teamKey);
-                    predictions.push(prediction);
-
-                    // Stop once we have enough predictions
-                    if (predictions.length >= pageSize) {
-                        break;
+                // First check standardDate field
+                if (prediction.standardDate === date) {
+                    isMatch = true;
+                } else if (prediction.date) {
+                    // Next, check if the main date contains our date
+                    const dateMatch = prediction.date.match(new RegExp(date, 'i'));
+                    if (dateMatch) {
+                        isMatch = true;
                     }
                 }
+
+                // Skip if no match
+                if (!isMatch) {
+                    return;
+                }
             }
+
+            // Create a unique key based on both team names to identify duplicates
+            const teamKey = `${prediction.team1.toLowerCase()}-${prediction.team2.toLowerCase()}`;
+
+            // Only add if we haven't seen this team pair before
+            if (!teamPairs.has(teamKey)) {
+                teamPairs.add(teamKey);
+                predictions.push(prediction);
+            }
+        });
+
+        // Debug logging
+        console.log(`Fetched ${predictions.length} predictions from ${collectionName} by date ${date}`);
+        if (predictions.length > 0) {
+            console.log("Sample prediction data:", {
+                scorePrediction: predictions[0].scorePrediction,
+                betOn: predictions[0].betOn,
+                valuePercent: predictions[0].valuePercent
+            });
         }
 
-        // Sort predictions by time before returning
-        const sortedPredictions = sortPredictionsByTime(predictions);
-
         // Determine if there are more results available
-        const hasMore = documentsProcessed === querySnapshot.size && querySnapshot.size >= pageSize;
+        // For client-side filtering, this is an approximation
+        const hasMore = predictions.length >= pageSize || (querySnapshot.size >= pageSize * 5);
 
         return {
-            predictions: sortedPredictions,
+            predictions,
             lastDocId: newLastDocId,
             hasMore
         };
@@ -347,7 +443,7 @@ const timeStringToMinutes = (timeStr: string | undefined): number => {
 };
 
 // Helper function to sort predictions by time
-const sortPredictionsByTime = (predictions: BettingPrediction[]): BettingPrediction[] => {
+export const sortPredictionsByTime = (predictions: BettingPrediction[]): BettingPrediction[] => {
     return [...predictions].sort((a, b) => {
         const timeA = extractTimeFromDate(a.date);
         const timeB = extractTimeFromDate(b.date);

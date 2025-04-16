@@ -46,6 +46,24 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
     
+    match /tennis-spread/{docId} {
+      allow read: if true;
+      // Only service accounts and admins can write
+      allow create, update, delete: if isAdmin();
+    }
+    
+    match /tennis-kelly/{docId} {
+      allow read: if true;
+      // Only service accounts and admins can write
+      allow create, update, delete: if isAdmin();
+    }
+    
+    match /table-tennis-kelly/{docId} {
+      allow read: if true;
+      // Only service accounts and admins can write
+      allow create, update, delete: if isAdmin();
+    }
+    
     match /processed-files/{docId} {
       allow read: if true;
       // Only service accounts and admins can write

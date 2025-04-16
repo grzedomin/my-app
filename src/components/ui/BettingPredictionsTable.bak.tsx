@@ -50,17 +50,6 @@ const extractSetScores = (scorePrediction: string): string => {
     return "";
 };
 
-// Helper function to extract main score without set scores
-const extractMainScore = (scorePrediction: string): string => {
-    // If no parentheses, return the whole string
-    if (!scorePrediction.includes("(")) {
-        return scorePrediction;
-    }
-
-    // Return only the part before the parentheses
-    return scorePrediction.split("(")[0].trim();
-};
-
 // Helper function to extract set scores from final score (similar pattern)
 const extractFinalSetScores = (finalScore: string): string => {
     const setScoreMatch = finalScore.match(/\(([^)]+)\)/);
@@ -116,6 +105,12 @@ const sortPredictionsByTime = (predictions: BettingPrediction[]): BettingPredict
 };
 
 // Helper to get "N/A" when a value is undefined, null, or empty string
+const getValueOrNA = (value: string | number | null | undefined): string => {
+    if (value === undefined || value === null || value === "") {
+        return "N/A";
+    }
+    return value.toString();
+};
 
 const BettingPredictionsTable: React.FC = () => {
     const { showNotification } = useNotification();
@@ -172,20 +167,6 @@ const BettingPredictionsTable: React.FC = () => {
 
             if (missingScorePredictions > 0 || missingBetOn > 0) {
                 console.log(`Missing data: ${missingScorePredictions} without scorePrediction, ${missingBetOn} without betOn`);
-
-                // Log the first prediction with missing score prediction for debugging
-                const firstMissingScorePrediction = displayedPredictions.find(p => !p.scorePrediction);
-                if (firstMissingScorePrediction) {
-                    console.log("Example of prediction with missing score prediction:",
-                        JSON.stringify(firstMissingScorePrediction, null, 2));
-                }
-
-                // Log the first prediction with missing bet on for debugging
-                const firstMissingBetOn = displayedPredictions.find(p => !p.betOn);
-                if (firstMissingBetOn) {
-                    console.log("Example of prediction with missing bet on:",
-                        JSON.stringify(firstMissingBetOn, null, 2));
-                }
             }
 
             // Detailed logging of the first item to see all available fields
@@ -198,9 +179,6 @@ const BettingPredictionsTable: React.FC = () => {
                     betOn: displayedPredictions[0].betOn,
                     valuePercent: displayedPredictions[0].valuePercent
                 });
-
-                // Log all keys to see what's actually in the object
-                console.log("All keys in prediction:", Object.keys(displayedPredictions[0]));
             }
         }
     }, [displayedPredictions, selectedBetType]);
@@ -719,9 +697,7 @@ const BettingPredictionsTable: React.FC = () => {
                                         <th className="py-3 px-4 text-center font-bold text-gray-300 w-[12%]">Date</th>
                                         <th className="py-3 px-4 text-center font-bold text-gray-300">Team 1</th>
                                         <th className="py-3 px-4 text-center font-bold text-gray-300">Team 2</th>
-                                        {selectedBetType !== "kelly" && (
-                                            <th className="py-3 px-4 text-center font-bold text-gray-300 w-[15%]">Score Prediction</th>
-                                        )}
+                                        <th className="py-3 px-4 text-center font-bold text-gray-300 w-[15%]">Score Prediction</th>
                                         {selectedBetType === "normal" ? (
                                             <>
                                                 <th className="py-3 px-4 text-center font-bold text-gray-300">Confidence</th>
@@ -745,6 +721,7 @@ const BettingPredictionsTable: React.FC = () => {
                                 </thead>
                                 <tbody>
                                     {displayedPredictions.map((prediction, index) => {
+                                        console.log("Spread prediction data:", prediction);
                                         // Get API score if available
                                         const apiScore = getFinalScoreFromApi(prediction);
 
@@ -798,18 +775,12 @@ const BettingPredictionsTable: React.FC = () => {
                                                     <div className="text-gray-200 font-semibold">{prediction.team2}</div>
                                                     <div className="text-xs text-gray-400 mt-1">{prediction.oddTeam2.toFixed(3)}</div>
                                                 </td>
-                                                {selectedBetType !== "kelly" && (
-                                                    <td className="py-3 px-4 text-center w-[15%]">
-                                                        <div className="text-blue-300 font-bold">
-                                                            {typeof prediction.scorePrediction !== 'undefined'
-                                                                ? extractMainScore(prediction.scorePrediction)
-                                                                : "N/A"}
-                                                        </div>
-                                                        {predictionSetScores && (
-                                                            <div className="text-xs text-blue-200 mt-1">{predictionSetScores}</div>
-                                                        )}
-                                                    </td>
-                                                )}
+                                                <td className="py-3 px-4 text-center w-[15%]">
+                                                    <div className="text-blue-300 font-bold">{prediction.scorePrediction || "N/A"}</div>
+                                                    {predictionSetScores && (
+                                                        <div className="text-xs text-blue-200 mt-1">{predictionSetScores}</div>
+                                                    )}
+                                                </td>
                                                 {selectedBetType === "normal" ? (
                                                     <>
                                                         <td className="py-3 px-4 text-center">
@@ -853,7 +824,7 @@ const BettingPredictionsTable: React.FC = () => {
                                                             </div>
                                                         </td>
                                                         <td className={`py-3 px-4 text-center text-gray-300 w-[10%]`}>
-                                                            {typeof prediction.betOn !== 'undefined' ? prediction.betOn : "N/A"}
+                                                            {prediction.betOn || "N/A"}
                                                         </td>
                                                     </>
                                                 ) : (
@@ -870,7 +841,7 @@ const BettingPredictionsTable: React.FC = () => {
                                                         </td>
                                                         <td className="py-3 px-4 text-center">
                                                             <div className="font-bold text-blue-300">
-                                                                {typeof prediction.betOn !== 'undefined' ? prediction.betOn : "N/A"}
+                                                                {prediction.betOn || "N/A"}
                                                             </div>
                                                         </td>
                                                     </>
@@ -903,17 +874,6 @@ const BettingPredictionsTable: React.FC = () => {
                         {/* Mobile & Tablet Card View - Only visible on small screens */}
                         <div className="md:hidden px-0 sm:px-0 w-full">
                             {displayedPredictions.map((prediction, index) => {
-                                // Enhanced logging to debug prediction data
-                                console.log(`Prediction ${index} data:`, {
-                                    team1: prediction.team1,
-                                    team2: prediction.team2,
-                                    scorePrediction: prediction.scorePrediction,
-                                    betOn: prediction.betOn,
-                                    valuePercent: prediction.valuePercent,
-                                    betType: prediction.betType,
-                                    allKeys: Object.keys(prediction)
-                                });
-
                                 // Get API score if available
                                 const apiScore = getFinalScoreFromApi(prediction);
 
@@ -967,18 +927,12 @@ const BettingPredictionsTable: React.FC = () => {
                                                 <div>{formatDateDisplay(prediction.date)}</div>
                                                 <div className="text-xs text-gray-500 mt-1">{extractTimeFromDate(prediction.date)}</div>
                                             </div>
-                                            {selectedBetType !== "kelly" && (
-                                                <div className="text-center">
-                                                    <div className="text-sm font-medium text-blue-300">
-                                                        {typeof prediction.scorePrediction !== 'undefined'
-                                                            ? extractMainScore(prediction.scorePrediction)
-                                                            : "N/A"}
-                                                    </div>
-                                                    {predictionSetScores && (
-                                                        <div className="text-xs text-blue-200 mt-1">{predictionSetScores}</div>
-                                                    )}
-                                                </div>
-                                            )}
+                                            <div className="text-center">
+                                                <div className="text-sm font-medium text-blue-300">{prediction.scorePrediction || "N/A"}</div>
+                                                {predictionSetScores && (
+                                                    <div className="text-xs text-blue-200 mt-1">{predictionSetScores}</div>
+                                                )}
+                                            </div>
                                         </div>
 
                                         <div className="grid grid-cols-2 gap-3 mb-3">
@@ -1049,7 +1003,7 @@ const BettingPredictionsTable: React.FC = () => {
                                                 <div className="text-center">
                                                     <div className="text-sm text-gray-400">Bet On</div>
                                                     <div className="font-bold text-blue-300 text-sm">
-                                                        {typeof prediction.betOn !== 'undefined' ? prediction.betOn : "N/A"}
+                                                        {prediction.betOn || "N/A"}
                                                     </div>
                                                 </div>
                                             )}
@@ -1066,7 +1020,7 @@ const BettingPredictionsTable: React.FC = () => {
                                                     <div className="text-center">
                                                         <div className="text-sm text-gray-400">Value Bet</div>
                                                         <div className="font-bold text-blue-300 text-sm">
-                                                            {typeof prediction.betOn !== 'undefined' ? prediction.betOn : "N/A"}
+                                                            {prediction.betOn || "N/A"}
                                                         </div>
                                                     </div>
                                                 </>

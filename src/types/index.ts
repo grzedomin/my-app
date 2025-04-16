@@ -9,6 +9,15 @@ export interface BettingPrediction {
     bettingPredictionTeam1Win: number;
     bettingPredictionTeam2Win: number;
     finalScore: string;
+    sportType?: string;
+    standardDate?: string;
+    fileId?: string;
+    sourceFile?: string;
+    betType?: string;
+    optimalStakePart?: number;
+    betOn?: string;
+    valuePercent?: number;
+    id?: string;
 }
 
 export interface FileData {
@@ -23,6 +32,7 @@ export interface FileData {
     isPublic?: boolean;
     fileDate?: string;
     sportType?: string;
+    betType?: string;
 }
 
 export type SubscriptionPlan = "monthly" | "yearly" | "none";

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { BettingPrediction, getPredictionsBySportType, getPredictionsByDate } from "@/lib/prediction-service";
+import { BettingPrediction, getPredictionsBySportType, getPredictionsByDate, BetType } from "@/lib/prediction-service";
 
 // Define the pagination state interface
 interface PaginationState {
@@ -24,7 +24,8 @@ export interface UseMatchesByDateResult {
 export const useMatchesByDate = (
     selectedDate: string,
     sportType: string = "tennis",
-    pageSize: number = 20
+    pageSize: number = 20,
+    betType: BetType = "normal"
 ): UseMatchesByDateResult => {
     const [predictions, setPredictions] = useState<BettingPrediction[]>([]);
     const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -40,7 +41,7 @@ export const useMatchesByDate = (
     // Use a ref to track if this is the initial load
     const initialLoadRef = useRef<boolean>(true);
 
-    // Reset when date or sport type changes
+    // Reset when date, sport type, or bet type changes
     useEffect(() => {
         setPredictions([]);
         setPaginationState({
@@ -49,7 +50,7 @@ export const useMatchesByDate = (
             isLoadingMore: false,
         });
         initialLoadRef.current = true;
-    }, [selectedDate, sportType]);
+    }, [selectedDate, sportType, betType]);
 
     // Initial data fetch
     useEffect(() => {
@@ -66,10 +67,10 @@ export const useMatchesByDate = (
 
                 if (selectedDate) {
                     // Fetch by date
-                    result = await getPredictionsByDate(selectedDate, sportType, pageSize);
+                    result = await getPredictionsByDate(selectedDate, sportType, pageSize, undefined, betType);
                 } else {
                     // Fetch by sport type only
-                    result = await getPredictionsBySportType(sportType, pageSize);
+                    result = await getPredictionsBySportType(sportType, pageSize, undefined, betType);
                 }
 
                 setPredictions(result.predictions);
@@ -89,7 +90,7 @@ export const useMatchesByDate = (
         };
 
         fetchInitialData();
-    }, [selectedDate, sportType, pageSize, initialLoadRef]);
+    }, [selectedDate, sportType, pageSize, initialLoadRef, betType]);
 
     // Function to load more data
     const loadMore = useCallback(async (): Promise<boolean> => {
@@ -108,14 +109,16 @@ export const useMatchesByDate = (
                     selectedDate,
                     sportType,
                     pageSize,
-                    paginationState.lastDocId || undefined
+                    paginationState.lastDocId || undefined,
+                    betType
                 );
             } else {
                 // Load more by sport type
                 result = await getPredictionsBySportType(
                     sportType,
                     pageSize,
-                    paginationState.lastDocId || undefined
+                    paginationState.lastDocId || undefined,
+                    betType
                 );
             }
 
@@ -136,7 +139,7 @@ export const useMatchesByDate = (
             setPaginationState(prev => ({ ...prev, isLoadingMore: false }));
             return false;
         }
-    }, [selectedDate, sportType, pageSize, paginationState.lastDocId, paginationState.isLoadingMore]);
+    }, [selectedDate, sportType, pageSize, paginationState.lastDocId, paginationState.isLoadingMore, betType]);
 
     return {
         predictions,

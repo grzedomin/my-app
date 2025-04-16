@@ -5,11 +5,29 @@ import { v4 as uuidv4 } from "uuid";
 import * as XLSX from "xlsx";
 import { FileData } from "@/types";
 
-// Extract date from Excel file
-export const extractDateFromExcel = async (file: File): Promise<string | null> => {
+// Extract date and bet type from Excel file
+export const extractDateFromExcel = async (file: File): Promise<{ date: string | null, betType: string }> => {
     try {
-        // First, try to extract date from the filename (sportType-DD-MM-YYYY format)
-        const filenameMatch = file.name.match(/(?:tennis|table-tennis)-(\d{2})-(\d{2})-(\d{4})/i);
+        // Default bet type is normal
+        let betType = "normal";
+
+        // Check filename for bet type indicators
+        if (file.name.includes("-spread-")) {
+            betType = "spread";
+        } else if (file.name.includes("-kelly-")) {
+            betType = "kelly";
+        }
+
+        // Extract date based on bet type and sport type
+        let filenameMatch: RegExpMatchArray | null = null;
+
+        if (betType === "spread") {
+            filenameMatch = file.name.match(/tennis-spread-(\d{2})-(\d{2})-(\d{4})/i);
+        } else if (betType === "kelly") {
+            filenameMatch = file.name.match(/(?:tennis|table-tennis)-kelly-(\d{2})-(\d{2})-(\d{4})/i);
+        } else {
+            filenameMatch = file.name.match(/(?:tennis|table-tennis)-(\d{2})-(\d{2})-(\d{4})/i);
+        }
 
         if (filenameMatch) {
             const [, day, month, year] = filenameMatch;
@@ -31,7 +49,7 @@ export const extractDateFromExcel = async (file: File): Promise<string | null> =
 
             // Format as "DDth MMM YYYY" (e.g., "12th Apr 2025")
             const formattedDate = `${parseInt(day, 10)}${daySuffix} ${monthName} ${year}`;
-            return formattedDate;
+            return { date: formattedDate, betType };
         }
 
         // If filename doesn't match the pattern, fall back to extracting from file content
@@ -45,12 +63,22 @@ export const extractDateFromExcel = async (file: File): Promise<string | null> =
                     const firstSheetName = workbook.SheetNames[0];
 
                     if (!firstSheetName) {
-                        resolve(null);
+                        resolve({ date: null, betType });
                         return;
                     }
 
                     const worksheet = workbook.Sheets[firstSheetName];
                     const jsonData = XLSX.utils.sheet_to_json<{ Date?: string }>(worksheet);
+
+                    // Try to detect bet type from the sheet data if available
+                    const firstRow = jsonData[0] as Record<string, unknown>;
+                    if (firstRow) {
+                        if (firstRow.hasOwnProperty("Optimal_Stake_Part") || firstRow.hasOwnProperty("Bet_On")) {
+                            betType = "kelly";
+                        } else if (firstRow.hasOwnProperty("Value_Percent") || firstRow.hasOwnProperty("Value_Bet")) {
+                            betType = "spread";
+                        }
+                    }
 
                     // Look for rows with a valid Date field that includes both date and time
                     // Start at index 1 to skip potential header rows
@@ -64,7 +92,7 @@ export const extractDateFromExcel = async (file: File): Promise<string | null> =
                                 const dateMatch = fullDate.match(/(\d+[a-z]{2}\s+[A-Za-z]+\s+\d{4})/);
                                 if (dateMatch && dateMatch[1]) {
                                     // Return the full date with time
-                                    resolve(fullDate);
+                                    resolve({ date: fullDate, betType });
                                     return;
                                 }
                             }
@@ -74,26 +102,26 @@ export const extractDateFromExcel = async (file: File): Promise<string | null> =
                     // If no row with time was found, fall back to the first row
                     if (jsonData.length > 0 && jsonData[0].Date) {
                         const firstDate = jsonData[0].Date;
-                        resolve(firstDate);
+                        resolve({ date: firstDate, betType });
                     } else {
-                        resolve(null);
+                        resolve({ date: null, betType });
                     }
                 } catch (error) {
                     console.error("Error extracting date from Excel:", error);
-                    resolve(null);
+                    resolve({ date: null, betType });
                 }
             };
 
             reader.onerror = () => {
                 console.error("Error reading file for date extraction");
-                resolve(null);
+                resolve({ date: null, betType });
             };
 
             reader.readAsBinaryString(file);
         });
     } catch (error) {
         console.error("Error in extractDateFromExcel:", error);
-        return null;
+        return { date: null, betType: "normal" };
     }
 };
 
@@ -182,7 +210,7 @@ export const uploadMultipleFiles = async (
             const fileDate = await extractDateFromExcel(file);
 
             // Upload file and get file data
-            const fileData = await uploadFile(file, userId, path, fileDate, sportType);
+            const fileData = await uploadFile(file, userId, path, fileDate.date, fileDate.betType, sportType);
             uploadedFiles.push(fileData);
         } catch (error) {
             console.error(`Error uploading file ${file.name}:`, error);
@@ -201,6 +229,7 @@ export const uploadFile = async (
     userId: string,
     path: string = "betting-files",
     fileDate?: string | null,
+    betType: string = "normal",
     sportType: string = "tennis" // Default to tennis
 ): Promise<FileData> => {
     try {
@@ -227,7 +256,8 @@ export const uploadFile = async (
                 originalName: file.name,
                 accessLevel: "public", // Allow public access to this file
                 fileDate: fileDate || "", // Store the date in metadata
-                sportType: sportType // Store the sport type in metadata
+                sportType: sportType, // Store the sport type in metadata
+                betType: betType // Store the bet type in metadata
             }
         };
 
@@ -251,7 +281,8 @@ export const uploadFile = async (
             size: file.size,
             isPublic: true, // Mark all files as public by default
             fileDate: fileDate || undefined,
-            sportType: sportType
+            sportType: sportType,
+            betType: betType
         };
 
         // Save to Firestore
