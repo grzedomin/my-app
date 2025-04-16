@@ -380,7 +380,6 @@ const BettingPredictionsTable: React.FC = () => {
 
     // Function to get final score from API
     // Kept for fallback and future enhancements
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const getFinalScoreFromApi = (prediction: BettingPrediction): string | null => {
         try {
             // Ensure we have valid player names
@@ -433,7 +432,6 @@ const BettingPredictionsTable: React.FC = () => {
 
     // Function to get set scores from API
     // Kept for fallback and future enhancements
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const getSetScoresFromApi = (prediction: BettingPrediction): { homeTeam: { set1: number; set2: number; }; awayTeam: { set1: number; set2: number; } } | null => {
         try {
             // Ensure we have valid player names

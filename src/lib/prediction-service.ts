@@ -54,22 +54,7 @@ const getCollectionName = (sportType: string, betType: BetType = "normal"): stri
     return "tennis";
 };
 
-/**
- * Get collection name based on sport type (legacy function for backward compatibility)
- * @deprecated Use getCollectionName instead. Kept for backward compatibility with existing code.
- */
-const getSportCollection = (sportType: string): string => {
-    // Normalize sport type to ensure consistency
-    const normalizedType = sportType.toLowerCase().trim();
 
-    // Map sport type to collection name
-    if (normalizedType === "table-tennis" || normalizedType === "table tennis") {
-        return "table-tennis";
-    }
-
-    // Default to tennis for any other value
-    return "tennis";
-};
 
 /**
  * Get unique dates for predictions of a specific sport type and bet type
