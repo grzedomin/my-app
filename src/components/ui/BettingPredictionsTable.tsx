@@ -141,6 +141,7 @@ const BettingPredictionsTable: React.FC = () => {
     const observer = useRef<IntersectionObserver | null>(null);
     const activeSportTypeChangeRef = useRef<string | null>(null);
     const activeBetTypeChangeRef = useRef<BetType | null>(null);
+    const [showExplanation, setShowExplanation] = useState<boolean>(true);
 
     // Use our custom paginated hook to fetch predictions
     const {
@@ -657,6 +658,61 @@ const BettingPredictionsTable: React.FC = () => {
                 </div>
             </div>
 
+            {/* Kelly Explanation Panel - Only show for Kelly bet type */}
+            {selectedBetType === "kelly" && (
+                <div className="mb-4 sm:mb-6 bg-blue-900/30 border border-blue-800 rounded-lg overflow-hidden">
+                    <div className="flex justify-between items-center px-4 py-3 bg-blue-900/50 cursor-pointer"
+                        onClick={() => setShowExplanation(!showExplanation)}
+                        tabIndex={0}
+                        role="button"
+                        aria-expanded={showExplanation}
+                        aria-label={showExplanation ? "Hide explanation" : "Show explanation"}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setShowExplanation(!showExplanation); }}>
+                        <h3 className="text-blue-100 font-medium">
+                            What are Kelly Value Bets?
+                        </h3>
+                        <div className="text-blue-100 transition-transform duration-300" style={{ transform: showExplanation ? 'rotate(0deg)' : 'rotate(180deg)' }}>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div
+                        className="overflow-hidden transition-all duration-300 ease-in-out"
+                        style={{
+                            maxHeight: showExplanation ? '1000px' : '0px',
+                            opacity: showExplanation ? 1 : 0
+                        }}
+                    >
+                        <div className="p-4 text-blue-100 text-sm leading-relaxed">
+                            <div className="space-y-3">
+                                <p>The Kelly Criterion is a bet-sizing technique which balances both risk and reward for the advantage gambler. It determines the optimal % of your total capital (ie bankroll) that you can bet on a single outcome or game. Here is the formula for the Kelly Criterion copied from Wikipedia:</p>
+
+                                <div className="flex justify-center my-4">
+                                    <div className="bg-blue-900/50 px-6 py-3 rounded-md text-lg font-medium">
+                                        f* = (bp − q)/b = (p(b + 1) − 1)/b
+                                    </div>
+                                </div>
+
+                                <p className="font-medium">Where:</p>
+                                <ul className="list-disc pl-6 space-y-1">
+                                    <li>f* is the fraction of the current bankroll to wager;</li>
+                                    <li>b is the net odds received on the wager (&ldquo;b to 1&rdquo;); that is, you could win $b (plus the $1 wagered) for a $1 bet</li>
+                                    <li>p is the probability of winning;</li>
+                                    <li>q is the probability of losing, which is 1 − p.</li>
+                                </ul>
+
+                                <p>As an example, if a gamble has a 60% chance of winning (p = 0.60, q = 0.40), and the gambler receives 1-to-1 odds on a winning bet (b = 1), then the gambler should bet 20% of his bankroll at each opportunity (f* = 0.20), in order to maximize the long-run growth rate of the bankroll.</p>
+
+                                <p>If the gambler has zero edge, i.e. if b = q / p, then the criterion recommends the gambler bets nothing.</p>
+
+                                <p>If the edge is negative (b &lt; q / p) the formula gives a negative result, indicating that the gambler should take the other side of the bet.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Date Filter */}
             {availableDates.length > 0 && (
                 <div className="mb-4 sm:mb-6">
@@ -671,7 +727,6 @@ const BettingPredictionsTable: React.FC = () => {
                         disabled={isLoading || isLoadingDates}
                     >
                         <option value="">All Dates</option>
-
                         {/* Date format options */}
                         <optgroup label="Dates">
                             {availableDates
@@ -681,21 +736,10 @@ const BettingPredictionsTable: React.FC = () => {
                                 ))
                             }
                         </optgroup>
-
-                        {/* Handle possible tournament dropdown items */}
-                        {false && ( // Disabled tournament options in dropdown
-                            <optgroup label="Tournaments">
-                                {availableDates
-                                    .filter(date => !isValidDateFormat(date) && date.trim().length > 0)
-                                    .map((tournament) => (
-                                        <option key={tournament} value={tournament}>{tournament}</option>
-                                    ))
-                                }
-                            </optgroup>
-                        )}
                     </select>
                 </div>
             )}
+
             {/* Data summary */}
             {displayedPredictions.length > 0 && (
                 <div className="mb-4 p-3 bg-gray-700 rounded-lg text-gray-200 flex justify-between">
