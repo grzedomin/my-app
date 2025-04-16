@@ -4,7 +4,6 @@ import { useNotification } from "@/context/NotificationContext";
 import { useSearchParams } from "next/navigation";
 import { useMatchesByDate, usePaginatedMatches } from "@/hooks";
 import { BettingPrediction, getPredictionDates, BetType } from "@/lib/prediction-service";
-import BetTabView from "./BetTabView";
 
 // Spinner component for loading states
 const LoadMoreSpinner = () => (
@@ -598,52 +597,99 @@ const BettingPredictionsTable: React.FC = () => {
 
     return (
         <div className="w-full">
-            {/* Sport Type Filter */}
-            <div className="mb-4 sm:mb-6">
-                <h3 className="block text-sm font-medium text-gray-300 mb-2">
-                    Sport Type
-                </h3>
-                <div className="flex space-x-2">
-                    <button
-                        onClick={() => handleSportTypeChange("tennis")}
-                        className={`px-4 py-2 rounded-md flex items-center justify-center ${selectedSportType === "tennis"
-                            ? "bg-blue-600 text-white"
-                            : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-                            }`}
-                        disabled={isLoading}
-                    >
-                        <span>Tennis</span>
-                        {isTableLoading && selectedSportType === "tennis" && (
-                            <span className="ml-2 inline-block">
-                                <div className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent"></div>
-                            </span>
-                        )}
-                    </button>
-                    <button
-                        onClick={() => handleSportTypeChange("table-tennis")}
-                        className={`px-4 py-2 rounded-md flex items-center justify-center ${selectedSportType === "table-tennis"
-                            ? "bg-blue-600 text-white"
-                            : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-                            }`}
-                        disabled={isLoading}
-                    >
-                        <span>Table Tennis</span>
-                        {isTableLoading && selectedSportType === "table-tennis" && (
-                            <span className="ml-2 inline-block">
-                                <div className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent"></div>
-                            </span>
-                        )}
-                    </button>
+            {/* Sport Type Filter and Bet Type Selector */}
+            <div className="mb-4 sm:mb-6 flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+                <div>
+                    <h3 className="block text-sm font-medium text-gray-300 mb-2">
+                        Sport Type
+                    </h3>
+                    <div className="flex space-x-2">
+                        <button
+                            onClick={() => handleSportTypeChange("tennis")}
+                            className={`px-4 py-2 rounded-md flex items-center justify-center transition-all hover:cursor-pointer ${selectedSportType === "tennis"
+                                ? "bg-blue-600 text-white shadow-md"
+                                : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                                }`}
+                            disabled={isLoading}
+                        >
+                            <span>Tennis</span>
+                            {isTableLoading && selectedSportType === "tennis" && (
+                                <span className="ml-2 inline-block">
+                                    <div className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent"></div>
+                                </span>
+                            )}
+                        </button>
+                        <button
+                            onClick={() => handleSportTypeChange("table-tennis")}
+                            className={`px-4 py-2 rounded-md flex items-center justify-center transition-all hover:cursor-pointer ${selectedSportType === "table-tennis"
+                                ? "bg-blue-600 text-white shadow-md"
+                                : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                                }`}
+                            disabled={isLoading}
+                        >
+                            <span>Table Tennis</span>
+                            {isTableLoading && selectedSportType === "table-tennis" && (
+                                <span className="ml-2 inline-block">
+                                    <div className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent"></div>
+                                </span>
+                            )}
+                        </button>
+                    </div>
+                </div>
+
+                <div>
+                    <h3 className="block text-sm font-medium text-gray-300 mb-2">
+                        Bet View Type
+                    </h3>
+                    <div className="flex space-x-2">
+                        <button
+                            onClick={() => handleBetTypeChange("normal")}
+                            className={`px-4 py-2 rounded-md flex items-center justify-center transition-all hover:cursor-pointer ${selectedBetType === "normal"
+                                ? "bg-blue-600 text-white shadow-md"
+                                : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                                }`}
+                            disabled={isLoading}
+                        >
+                            <span>Predictions</span>
+                            {isTableLoading && selectedBetType === "normal" && (
+                                <span className="ml-2 inline-block">
+                                    <div className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent"></div>
+                                </span>
+                            )}
+                        </button>
+                        <button
+                            onClick={() => handleBetTypeChange("spread")}
+                            className={`px-4 py-2 rounded-md flex items-center justify-center transition-all hover:cursor-pointer ${selectedBetType === "spread"
+                                ? "bg-blue-600 text-white shadow-md"
+                                : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                                }`}
+                            disabled={isLoading || selectedSportType === "table-tennis"}
+                        >
+                            <span>Spread Value Bets</span>
+                            {isTableLoading && selectedBetType === "spread" && (
+                                <span className="ml-2 inline-block">
+                                    <div className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent"></div>
+                                </span>
+                            )}
+                        </button>
+                        <button
+                            onClick={() => handleBetTypeChange("kelly")}
+                            className={`px-4 py-2 rounded-md flex items-center justify-center transition-all hover:cursor-pointer ${selectedBetType === "kelly"
+                                ? "bg-blue-600 text-white shadow-md"
+                                : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                                }`}
+                            disabled={isLoading}
+                        >
+                            <span>Kelly Value Bets</span>
+                            {isTableLoading && selectedBetType === "kelly" && (
+                                <span className="ml-2 inline-block">
+                                    <div className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent"></div>
+                                </span>
+                            )}
+                        </button>
+                    </div>
                 </div>
             </div>
-
-            {/* Bet Type Tabs */}
-            <BetTabView
-                selectedView={selectedBetType}
-                onViewChange={handleBetTypeChange}
-                sportType={selectedSportType}
-                isLoading={isLoading}
-            />
 
             {/* Date Filter */}
             {availableDates.length > 0 && (
